@@ -1,3 +1,4 @@
+use captcha::{gen, Difficulty};
 use chrono::{prelude::*, Duration};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{header, Method, StatusCode};
@@ -48,6 +49,11 @@ impl JwtClaims<'_> {
             iss: TOKEN_ISSUER,
         }
     }
+}
+
+async fn generate_captcha() -> (String, String) {
+    let captcha = gen(Difficulty::Medium);
+    (captcha.chars_as_string(), captcha.as_base64().unwrap())
 }
 
 async fn generate_auth_token() -> Result<Response<Body>> {

@@ -2,11 +2,15 @@
 name = "main"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "atomicdex-auth"
+path = "src/main.rs"
 
 [dependencies]
 bytes = "1.1.0"
+captcha = "0.0.9"
 chrono = "0.4.19"
 futures-util = "0.3.21"
 hyper = { version = "0.14.18", features = ["server", "http1", "http2", "tcp"] }
