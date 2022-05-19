@@ -1,5 +1,6 @@
 use captcha::{gen, Difficulty};
 use chrono::{prelude::*, Duration};
+use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{header, Method, StatusCode};
 use hyper::{Body, Request, Response, Server};
@@ -10,6 +11,7 @@ use serde_json::json;
 use std::env;
 use std::fs::File;
 use std::io::Read;
+use std::net::SocketAddr;
 
 const TOKEN_ISSUER: &str = "ATOMICDEX-AUTH";
 
@@ -102,7 +104,7 @@ async fn method_not_allowed() -> Result<Response<Body>> {
         .unwrap())
 }
 
-async fn router(req: Request<Body>) -> Result<Response<Body>> {
+async fn router(req: Request<Body>, _remote_addr: SocketAddr) -> Result<Response<Body>> {
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => api_healthcheck().await,
         (&Method::GET, "/generate-token") => generate_auth_token().await,
@@ -117,7 +119,10 @@ async fn main() -> Result<()> {
     let port = env::var("AUTH_API_PORT").unwrap_or_else(|_| 5000.to_string());
     let addr = format!("0.0.0.0:{}", port).parse().unwrap();
 
-    let router = make_service_fn(move |_| async { Ok::<_, GenericError>(service_fn(router)) });
+    let router = make_service_fn(|c_stream: &AddrStream| {
+        let remote_addr = c_stream.remote_addr();
+        async move { Ok::<_, GenericError>(service_fn(move |req| router(req, remote_addr))) }
+    });
 
     let server = Server::bind(&addr).serve(router);
 
