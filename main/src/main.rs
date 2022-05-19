@@ -122,16 +122,13 @@ async fn validate_auth_token<'a>(req: Request<Body>) -> Result<Response<Body>> {
         validation.set_issuer(&[TOKEN_ISSUER]);
 
         if let Err(_) = decode::<JwtClaims>(&token, &AUTH_DECODING_KEY, &validation) {
-            return response_by_status(StatusCode::UNAUTHORIZED).await;
+            return response_by_status(StatusCode::UNAUTHORIZED);
         }
 
-        return Ok(Response::builder()
-            .status(StatusCode::NO_CONTENT)
-            .body(Body::from(Vec::new()))
-            .unwrap());
+        return response_by_status(StatusCode::NO_CONTENT);
     }
 
-    response_by_status(StatusCode::UNAUTHORIZED).await
+    response_by_status(StatusCode::UNAUTHORIZED)
 }
 
 async fn api_healthcheck() -> Result<Response<Body>> {
@@ -146,7 +143,11 @@ async fn api_healthcheck() -> Result<Response<Body>> {
         .unwrap())
 }
 
-async fn response_by_status(status: StatusCode) -> Result<Response<Body>> {
+async fn method_not_allowed() -> Result<Response<Body>> {
+    response_by_status(StatusCode::METHOD_NOT_ALLOWED)
+}
+
+fn response_by_status(status: StatusCode) -> Result<Response<Body>> {
     Ok(Response::builder()
         .status(status)
         .body(Body::from(Vec::new()))
@@ -158,7 +159,7 @@ async fn router(req: Request<Body>, _remote_addr: SocketAddr) -> Result<Response
         (&Method::GET, "/") => api_healthcheck().await,
         (&Method::GET, "/generate-token") => generate_auth_token().await,
         (&Method::GET, "/validate-token") => validate_auth_token(req).await,
-        _ => response_by_status(StatusCode::METHOD_NOT_ALLOWED).await,
+        _ => method_not_allowed().await,
     }
 }
 
