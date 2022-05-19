@@ -119,7 +119,7 @@ async fn main() -> Result<()> {
     let port = env::var("AUTH_API_PORT").unwrap_or_else(|_| 5000.to_string());
     let addr = format!("0.0.0.0:{}", port).parse().unwrap();
 
-    let router = make_service_fn(|c_stream: &AddrStream| {
+    let router = make_service_fn(move |c_stream: &AddrStream| {
         let remote_addr = c_stream.remote_addr();
         async move { Ok::<_, GenericError>(service_fn(move |req| router(req, remote_addr))) }
     });
