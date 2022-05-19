@@ -1,12 +1,13 @@
 use captcha::{gen, Difficulty};
 use chrono::{prelude::*, Duration};
+use hyper::header::AUTHORIZATION;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{header, Method, StatusCode};
+use hyper::{header, HeaderMap, Method, StatusCode};
 use hyper::{Body, Request, Response, Server};
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use lazy_static::lazy_static;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::env;
 use std::fs::File;
@@ -18,15 +19,15 @@ const TOKEN_ISSUER: &str = "ATOMICDEX-AUTH";
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
 type Result<T> = std::result::Result<T, GenericError>;
 
-#[derive(Debug, Serialize)]
-struct JwtClaims<'a> {
+#[derive(Debug, Serialize, Deserialize)]
+struct JwtClaims {
     iat: usize,
     nbf: usize,
     exp: usize,
-    iss: &'a str,
+    iss: String,
 }
 
-impl JwtClaims<'_> {
+impl JwtClaims {
     fn new() -> Self {
         let current_time = Utc::now();
         let current_ts = current_time.timestamp() as usize;
@@ -35,13 +36,14 @@ impl JwtClaims<'_> {
             iat: current_ts,
             nbf: current_ts,
             exp: (current_time + Duration::seconds(*AUTH_TOKEN_EXP)).timestamp() as usize,
-            iss: TOKEN_ISSUER,
+            iss: TOKEN_ISSUER.to_string(),
         }
     }
 }
 
 lazy_static! {
     static ref AUTH_ENCODING_KEY: EncodingKey = generate_encoding_key();
+    static ref AUTH_DECODING_KEY: DecodingKey = generate_decoding_key();
     static ref AUTH_TOKEN_EXP: i64 = env::var("AUTH_TOKEN_EXP")
         .unwrap_or(String::from("3600"))
         .parse::<i64>()
@@ -50,21 +52,50 @@ lazy_static! {
 
 fn initialize_global_definitions() {
     lazy_static::initialize(&AUTH_ENCODING_KEY);
-    lazy_static::initialize(&AUTH_ENCODING_KEY);
+    lazy_static::initialize(&AUTH_DECODING_KEY);
+    lazy_static::initialize(&AUTH_TOKEN_EXP);
+}
+
+fn read_file_buffer(path: &str) -> Vec<u8> {
+    let mut file = File::open(path).expect(&format!("Couldn't open {}", path));
+    let mut buffer: Vec<u8> = Vec::new();
+    file.read_to_end(&mut buffer)
+        .expect(&format!("Couldn't read {}", path));
+
+    buffer
 }
 
 fn generate_encoding_key() -> EncodingKey {
-    let private_key_path = env::var("AUTH_PK_PATH").expect("AUTH_PK_PATH must be defined.");
-
-    let mut file = File::open(private_key_path).unwrap();
-    let mut buffer: Vec<u8> = Vec::new();
-    file.read_to_end(&mut buffer).unwrap();
+    let private_key_path =
+        env::var("AUTH_PRIV_KEY_PATH").expect("AUTH_PRIV_KEY_PATH must be defined.");
+    let buffer = read_file_buffer(&private_key_path);
     EncodingKey::from_rsa_pem(&buffer).unwrap()
+}
+
+fn generate_decoding_key() -> DecodingKey {
+    let public_key_path =
+        env::var("AUTH_PUB_KEY_PATH").expect("AUTH_PUB_KEY_PATH must be defined.");
+    let buffer = read_file_buffer(&public_key_path);
+    DecodingKey::from_rsa_pem(&buffer).unwrap()
 }
 
 fn generate_captcha() -> (String, String) {
     let captcha = gen(Difficulty::Medium);
     (captcha.chars_as_string(), captcha.as_base64().unwrap())
+}
+
+fn parse_token_from_header(headers: &HeaderMap) -> Option<String> {
+    if let Some(token) = headers.get(AUTHORIZATION) {
+        if token.is_empty() {
+            return None;
+        }
+
+        if let Ok(token_str) = token.to_str() {
+            return token_str.split_whitespace().last().map(|t| t.to_string());
+        }
+    }
+
+    None
 }
 
 async fn generate_auth_token() -> Result<Response<Body>> {
@@ -85,6 +116,24 @@ async fn generate_auth_token() -> Result<Response<Body>> {
         .unwrap())
 }
 
+async fn validate_auth_token<'a>(req: Request<Body>) -> Result<Response<Body>> {
+    if let Some(token) = parse_token_from_header(req.headers()) {
+        let mut validation = Validation::new(Algorithm::RS256);
+        validation.set_issuer(&[TOKEN_ISSUER]);
+
+        if let Err(_) = decode::<JwtClaims>(&token, &AUTH_DECODING_KEY, &validation) {
+            return response_by_status(StatusCode::UNAUTHORIZED).await;
+        }
+
+        return Ok(Response::builder()
+            .status(StatusCode::NO_CONTENT)
+            .body(Body::from(Vec::new()))
+            .unwrap());
+    }
+
+    response_by_status(StatusCode::UNAUTHORIZED).await
+}
+
 async fn api_healthcheck() -> Result<Response<Body>> {
     let json = json!({
         "status": "healthy",
@@ -97,9 +146,9 @@ async fn api_healthcheck() -> Result<Response<Body>> {
         .unwrap())
 }
 
-async fn method_not_allowed() -> Result<Response<Body>> {
+async fn response_by_status(status: StatusCode) -> Result<Response<Body>> {
     Ok(Response::builder()
-        .status(StatusCode::METHOD_NOT_ALLOWED)
+        .status(status)
         .body(Body::from(Vec::new()))
         .unwrap())
 }
@@ -108,7 +157,8 @@ async fn router(req: Request<Body>, _remote_addr: SocketAddr) -> Result<Response
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => api_healthcheck().await,
         (&Method::GET, "/generate-token") => generate_auth_token().await,
-        _ => method_not_allowed().await,
+        (&Method::GET, "/validate-token") => validate_auth_token(req).await,
+        _ => response_by_status(StatusCode::METHOD_NOT_ALLOWED).await,
     }
 }
 

@@ -1,5 +1,7 @@
 ### configuration environment variables
-AUTH_PK_PATH
+AUTH_PRIV_KEY_PATH
+
+AUTH_PUB_KEY_PATH
 
 AUTH_API_PORT
 
