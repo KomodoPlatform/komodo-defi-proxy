@@ -13,19 +13,6 @@ use std::io::Read;
 
 const TOKEN_ISSUER: &str = "ATOMICDEX-AUTH";
 
-fn generate_encoding_key() -> EncodingKey {
-    let private_key_path = env::var("AUTH_PK_PATH").expect("AUTH_PK_PATH must be defined.");
-
-    let mut file = File::open(private_key_path).unwrap();
-    let mut buffer: Vec<u8> = Vec::new();
-    file.read_to_end(&mut buffer).unwrap();
-    EncodingKey::from_rsa_pem(&buffer).unwrap()
-}
-
-lazy_static! {
-    static ref AUTH_ENCODING_KEY: EncodingKey = generate_encoding_key();
-}
-
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
 type Result<T> = std::result::Result<T, GenericError>;
 
@@ -45,13 +32,35 @@ impl JwtClaims<'_> {
         Self {
             iat: current_ts,
             nbf: current_ts,
-            exp: (current_time + Duration::seconds(30)).timestamp() as usize,
+            exp: (current_time + Duration::seconds(*AUTH_TOKEN_EXP)).timestamp() as usize,
             iss: TOKEN_ISSUER,
         }
     }
 }
 
-async fn generate_captcha() -> (String, String) {
+lazy_static! {
+    static ref AUTH_ENCODING_KEY: EncodingKey = generate_encoding_key();
+    static ref AUTH_TOKEN_EXP: i64 = env::var("AUTH_TOKEN_EXP")
+        .unwrap_or(String::from("3600"))
+        .parse::<i64>()
+        .expect("Couldn't parse AUTH_TOKEN_EXP as i64");
+}
+
+fn initialize_global_definitions() {
+    lazy_static::initialize(&AUTH_ENCODING_KEY);
+    lazy_static::initialize(&AUTH_ENCODING_KEY);
+}
+
+fn generate_encoding_key() -> EncodingKey {
+    let private_key_path = env::var("AUTH_PK_PATH").expect("AUTH_PK_PATH must be defined.");
+
+    let mut file = File::open(private_key_path).unwrap();
+    let mut buffer: Vec<u8> = Vec::new();
+    file.read_to_end(&mut buffer).unwrap();
+    EncodingKey::from_rsa_pem(&buffer).unwrap()
+}
+
+fn generate_captcha() -> (String, String) {
     let captcha = gen(Difficulty::Medium);
     (captcha.chars_as_string(), captcha.as_base64().unwrap())
 }
@@ -103,7 +112,7 @@ async fn router(req: Request<Body>) -> Result<Response<Body>> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    lazy_static::initialize(&AUTH_ENCODING_KEY);
+    initialize_global_definitions();
 
     let port = env::var("AUTH_API_PORT").unwrap_or_else(|_| 5000.to_string());
     let addr = format!("0.0.0.0:{}", port).parse().unwrap();
