@@ -120,6 +120,9 @@ async fn validate_auth_token<'a>(req: Request<Body>) -> Result<Response<Body>> {
     if let Some(token) = parse_token_from_header(req.headers()) {
         let mut validation = Validation::new(Algorithm::RS256);
         validation.set_issuer(&[TOKEN_ISSUER]);
+        validation.validate_exp = true;
+        validation.validate_nbf = true;
+        validation.leeway = 0;
 
         if let Err(_) = decode::<JwtClaims>(&token, &AUTH_DECODING_KEY, &validation) {
             return response_by_status(StatusCode::UNAUTHORIZED);
