@@ -7,6 +7,7 @@ use hyper::{header, HeaderMap, Method, StatusCode};
 use hyper::{Body, Request, Response, Server};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use lazy_static::lazy_static;
+use redis::aio::MultiplexedConnection;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::env;
@@ -42,18 +43,20 @@ impl JwtClaims {
 }
 
 lazy_static! {
-    static ref AUTH_ENCODING_KEY: EncodingKey = generate_encoding_key();
     static ref AUTH_DECODING_KEY: DecodingKey = generate_decoding_key();
+    static ref AUTH_ENCODING_KEY: EncodingKey = generate_encoding_key();
     static ref AUTH_TOKEN_EXP: i64 = env::var("AUTH_TOKEN_EXP")
         .unwrap_or(String::from("3600"))
         .parse::<i64>()
         .expect("Couldn't parse AUTH_TOKEN_EXP as i64");
+    static ref REDIS_CLIENT: redis::Client = connect_to_redis();
 }
 
 fn initialize_global_definitions() {
     lazy_static::initialize(&AUTH_ENCODING_KEY);
     lazy_static::initialize(&AUTH_DECODING_KEY);
     lazy_static::initialize(&AUTH_TOKEN_EXP);
+    lazy_static::initialize(&REDIS_CLIENT);
 }
 
 fn read_file_buffer(path: &str) -> Vec<u8> {
@@ -65,11 +68,9 @@ fn read_file_buffer(path: &str) -> Vec<u8> {
     buffer
 }
 
-fn generate_encoding_key() -> EncodingKey {
-    let private_key_path =
-        env::var("AUTH_PRIV_KEY_PATH").expect("AUTH_PRIV_KEY_PATH must be defined.");
-    let buffer = read_file_buffer(&private_key_path);
-    EncodingKey::from_rsa_pem(&buffer).unwrap()
+fn connect_to_redis() -> redis::Client {
+    let cs = env::var("REDIS_CONNECTION_STRING").expect("REDIS_CONNECTION_STRING must be defined.");
+    redis::Client::open(cs).expect("Couldn't connect to redis server.")
 }
 
 fn generate_decoding_key() -> DecodingKey {
@@ -77,6 +78,13 @@ fn generate_decoding_key() -> DecodingKey {
         env::var("AUTH_PUB_KEY_PATH").expect("AUTH_PUB_KEY_PATH must be defined.");
     let buffer = read_file_buffer(&public_key_path);
     DecodingKey::from_rsa_pem(&buffer).unwrap()
+}
+
+fn generate_encoding_key() -> EncodingKey {
+    let private_key_path =
+        env::var("AUTH_PRIV_KEY_PATH").expect("AUTH_PRIV_KEY_PATH must be defined.");
+    let buffer = read_file_buffer(&private_key_path);
+    EncodingKey::from_rsa_pem(&buffer).unwrap()
 }
 
 fn generate_captcha() -> (String, String) {
@@ -96,6 +104,13 @@ fn parse_token_from_header(headers: &HeaderMap) -> Option<String> {
     }
 
     None
+}
+
+async fn get_redis_connection() -> MultiplexedConnection {
+    REDIS_CLIENT
+        .get_multiplexed_tokio_connection()
+        .await
+        .expect("Couldn't get connection from redis client.")
 }
 
 async fn generate_auth_token() -> Result<Response<Body>> {
@@ -157,7 +172,31 @@ fn response_by_status(status: StatusCode) -> Result<Response<Body>> {
         .unwrap())
 }
 
-async fn router(req: Request<Body>, _remote_addr: SocketAddr) -> Result<Response<Body>> {
+async fn can_continue(ip_addr: String, r_connection: &mut MultiplexedConnection) -> bool {
+    // TODO
+    // implement the rate-limiting algorithm
+
+    // match redis::cmd("SET")
+    //     .arg(&ip_addr)
+    //     .arg("")
+    //     .query_async(r_connection)
+    //     .await
+    // {
+    //     Ok(t) => t,
+    //     Err(e) => println!("Failed writing {} into redis. {}", ip_addr, e),
+    // };
+
+    true
+}
+
+async fn router(
+    req: Request<Body>,
+    _remote_addr: SocketAddr,
+    _r_connection: MultiplexedConnection,
+) -> Result<Response<Body>> {
+    // TODO
+    // use and handle fn can_continue()
+
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => api_healthcheck().await,
         (&Method::GET, "/generate-token") => generate_auth_token().await,
@@ -175,7 +214,12 @@ async fn main() -> Result<()> {
 
     let router = make_service_fn(move |c_stream: &AddrStream| {
         let remote_addr = c_stream.remote_addr();
-        async move { Ok::<_, GenericError>(service_fn(move |req| router(req, remote_addr))) }
+        async move {
+            let r_connection = get_redis_connection().await;
+            Ok::<_, GenericError>(service_fn(move |req| {
+                router(req, remote_addr, r_connection.clone())
+            }))
+        }
     });
 
     let server = Server::bind(&addr).serve(router);

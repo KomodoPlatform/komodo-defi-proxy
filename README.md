@@ -7,6 +7,8 @@ AUTH_API_PORT
 
 AUTH_TOKEN_EXP
 
+REDIS_CONNECTION_STRING
+
 ### creating rsa key pairs
 openssl genrsa -out private-key.pem 2048
 
