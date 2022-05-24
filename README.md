@@ -16,4 +16,4 @@ openssl rsa -in private-key.pem -outform PEM -pubout -out public-key.pem
 
 ### Architecture
 
-![arch](https://user-images.githubusercontent.com/39852038/170087184-5e98a0a0-6d4e-46d1-9213-aa62fd885be9.png)
+![arch](https://user-images.githubusercontent.com/39852038/170098516-81fbeb1b-7043-48a7-9185-41d148932df0.png)
