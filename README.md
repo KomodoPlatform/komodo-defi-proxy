@@ -1,3 +1,4 @@
+<!---
 ### configuration environment variables
 AUTH_PRIV_KEY_PATH
 
@@ -13,6 +14,7 @@ REDIS_CONNECTION_STRING
 openssl genrsa -out private-key.pem 2048
 
 openssl rsa -in private-key.pem -outform PEM -pubout -out public-key.pem
+-->
 
 ### Architecture
 ![2022-05-25_09-44](https://user-images.githubusercontent.com/39852038/170197519-005732b5-b8b6-44f7-99df-ab1294f8ae21.png)
