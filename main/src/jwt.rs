@@ -28,6 +28,7 @@ impl JwtClaims {
 const TOKEN_ISSUER: &str = "ATOMICDEX-AUTH";
 
 static AUTH_DECODING_KEY: OnceCell<DecodingKey> = OnceCell::new();
+#[allow(dead_code)]
 pub fn get_decoding_key() -> &'static DecodingKey {
     let config = get_app_config();
 
@@ -48,10 +49,10 @@ pub fn get_encoding_key() -> &'static EncodingKey {
 }
 
 fn read_file_buffer(path: &str) -> Vec<u8> {
-    let mut file = File::open(path).expect(&format!("Couldn't open {}", path));
+    let mut file = File::open(path).unwrap_or_else(|_| panic!("Couldn't open {}", path));
     let mut buffer: Vec<u8> = Vec::new();
     file.read_to_end(&mut buffer)
-        .expect(&format!("Couldn't read {}", path));
+        .unwrap_or_else(|_| panic!("Couldn't read {}", path));
 
     buffer
 }
@@ -66,6 +67,7 @@ pub async fn generate_jwt() -> Result<String> {
     )?)
 }
 
+#[allow(dead_code)]
 async fn validate_jwt(token: String) -> bool {
     let mut validation = Validation::new(Algorithm::RS256);
     validation.set_issuer(&[TOKEN_ISSUER]);
@@ -73,7 +75,7 @@ async fn validate_jwt(token: String) -> bool {
     validation.validate_nbf = true;
     validation.leeway = 0;
 
-    if let Err(_) = decode::<JwtClaims>(&token, get_decoding_key(), &validation) {
+    if decode::<JwtClaims>(&token, get_decoding_key(), &validation).is_err() {
         return false;
     }
 

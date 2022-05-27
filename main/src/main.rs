@@ -40,7 +40,7 @@ impl AppConfig {
 static CONFIG: OnceCell<AppConfig> = OnceCell::new();
 
 fn get_app_config() -> &'static AppConfig {
-    CONFIG.get_or_init(|| AppConfig::from_fs())
+    CONFIG.get_or_init(AppConfig::from_fs)
 }
 
 #[tokio::main]

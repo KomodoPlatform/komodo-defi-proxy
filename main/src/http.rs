@@ -1,9 +1,8 @@
-use crate::jwt::generate_jwt;
-
 use super::*;
+use crate::jwt::generate_jwt;
 use hyper::{
-    header::{self, HeaderName, HeaderValue},
-    Body, Method, Request, Response, Server, StatusCode,
+    header::{self, HeaderValue},
+    Body, HeaderMap, Method, Request, Response, Server, StatusCode,
 };
 use redis::aio::MultiplexedConnection;
 use serde_json::json;
@@ -42,21 +41,26 @@ fn response_by_status(status: StatusCode) -> Result<Response<Body>> {
         .unwrap())
 }
 
+async fn insert_jwt_to_http_header(headers: &mut HeaderMap<HeaderValue>) -> Result<()> {
+    let auth_token = generate_jwt().await?;
+    headers.insert(
+        header::AUTHORIZATION,
+        format!("Bearer {}", auth_token).parse().unwrap(),
+    );
+
+    Ok(())
+}
+
 async fn proxy(mut req: Request<Body>) -> Result<Response<Body>> {
     let config = get_app_config();
-
     let proxy_route = config.get_proxy_route_by_inbound(req.uri().to_string());
 
     if let Some(proxy_route) = proxy_route {
-        let client = hyper::Client::new();
+        // Modify outgoing request
+        insert_jwt_to_http_header(req.headers_mut()).await?;
         *req.uri_mut() = proxy_route.outbound_route.parse().unwrap();
 
-        let auth_token = generate_jwt().await?;
-        req.headers_mut().insert(
-            header::AUTHORIZATION,
-            format!("Bearer {}", auth_token).parse().unwrap(),
-        );
-
+        let client = hyper::Client::new();
         return Ok(client.request(req).await.unwrap());
     }
 
@@ -68,7 +72,7 @@ async fn router(
     _remote_addr: SocketAddr,
     _r_connection: MultiplexedConnection,
 ) -> Result<Response<Body>> {
-    if req.method() == &Method::GET && req.uri().path() == "/" {
+    if req.method() == Method::GET && req.uri().path() == "/" {
         return api_healthcheck().await;
     }
 
