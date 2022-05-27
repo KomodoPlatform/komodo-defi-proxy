@@ -1,20 +1,34 @@
-<!---
-### configuration environment variables
-AUTH_PRIV_KEY_PATH
+### Dev Requirements
 
-AUTH_PUB_KEY_PATH
+Creating rsa key pairs
 
-AUTH_API_PORT
-
-AUTH_TOKEN_EXP
-
-REDIS_CONNECTION_STRING
-
-### creating rsa key pairs
+```sh
 openssl genrsa -out private-key.pem 2048
+```
 
+```sh
 openssl rsa -in private-key.pem -outform PEM -pubout -out public-key.pem
--->
+```
+
+Create the configuration file for app runtime.
+
+```json
+{
+	"port": 6150,
+	"pubkey_path": "/path_to_publick_key.pem",
+	"privkey_path": "/path_to_private_key.pem",
+	"redis_connection_string": "redis://localhost",
+	"proxy_routes": [
+		{
+			"inbound_route": "/dev",
+			"outbound_route": "http://localhost:8000",
+		}
+	]
+}
+```
+
+Expose configuration file's path as an environment variable in `AUTH_APP_CONFIG_PATH`.
+
 
 ### Architecture
 ![2022-05-25_09-44](https://user-images.githubusercontent.com/39852038/170197519-005732b5-b8b6-44f7-99df-ab1294f8ae21.png)
