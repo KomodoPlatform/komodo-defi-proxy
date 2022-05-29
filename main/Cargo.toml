@@ -9,6 +9,7 @@ name = "atomicdex-auth"
 path = "src/main.rs"
 
 [dependencies]
+async-trait = "0.1.53"
 bytes = "1.1.0"
 chrono = "0.4.19"
 futures-util = "0.3.21"
