@@ -1,5 +1,6 @@
 use super::*;
 use crate::jwt::generate_jwt;
+use bytes::Buf;
 use hyper::{
     header::{self, HeaderValue},
     Body, HeaderMap, Method, Request, Response, Server, StatusCode,
@@ -22,7 +23,7 @@ impl AppConfig {
     }
 }
 
-async fn api_healthcheck() -> Result<Response<Body>> {
+async fn get_healthcheck() -> Result<Response<Body>> {
     let json = json!({
         "status": "healthy",
     });
@@ -31,6 +32,26 @@ async fn api_healthcheck() -> Result<Response<Body>> {
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json.to_string()))
+        .unwrap())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IpStatusPayload {
+    pub ip: String,
+    pub status: i8,
+}
+
+async fn post_ip_status(req: Request<Body>) -> Result<Response<Body>> {
+    let whole_body = hyper::body::aggregate(req).await?;
+    let payload: Vec<IpStatusPayload> = serde_json::from_reader(whole_body.reader())?;
+
+    let mut db = Db::create_instance().await;
+    db.bulk_insert_ip_status(payload).await?;
+
+    Ok(Response::builder()
+        .status(StatusCode::NO_CONTENT)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(Vec::new()))
         .unwrap())
 }
 
@@ -69,13 +90,22 @@ async fn proxy(mut req: Request<Body>) -> Result<Response<Body>> {
 
 async fn router(req: Request<Body>, remote_addr: SocketAddr) -> Result<Response<Body>> {
     let mut db = Db::create_instance().await;
+    // db.insert_ip_status(remote_addr.ip().to_string(), IpStatus::Unrecognized).await?;
 
     if let IpStatus::Blocked = db.get_ip_status(remote_addr.ip().to_string()).await? {
         return response_by_status(StatusCode::FORBIDDEN);
     }
 
+    // TODO
+    // Will be refactored
     if req.method() == Method::GET && req.uri().path() == "/" {
-        return api_healthcheck().await;
+        return get_healthcheck().await;
+    } else if req.method() == Method::POST && req.uri().path() == "/ip-status" {
+        if remote_addr.ip().is_global() {
+            return response_by_status(StatusCode::FORBIDDEN);
+        }
+
+        return post_ip_status(req).await;
     }
 
     proxy(req).await

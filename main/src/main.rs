@@ -1,3 +1,5 @@
+#![feature(ip)]
+
 use crate::{http::serve, memory_db::get_redis_connection};
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};

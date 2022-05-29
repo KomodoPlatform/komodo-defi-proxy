@@ -1,3 +1,5 @@
+use crate::http::IpStatusPayload;
+
 use super::*;
 use async_trait::async_trait;
 use redis::{aio::MultiplexedConnection, FromRedisValue};
@@ -17,10 +19,10 @@ pub fn get_redis_client() -> &'static redis::Client {
     REDIS_CLIENT.get_or_init(client_closure)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub enum IpStatus {
     /// Follow the normal procedure.
-    Unrecognized = -1,
+    None = -1,
     /// Means incoming request will be respond as `403 Forbidden`.
     Trusted,
     /// Means incoming request will bypass the security checks on the middleware layer.
@@ -32,7 +34,7 @@ impl IpStatus {
         match value {
             0 => Self::Trusted,
             1 => Self::Blocked,
-            _ => Self::Unrecognized,
+            _ => Self::None,
         }
     }
 }
@@ -69,6 +71,7 @@ impl Db {
 #[async_trait]
 pub trait IpStatusOperations {
     async fn insert_ip_status(&mut self, ip: String, status: IpStatus) -> Result<()>;
+    async fn bulk_insert_ip_status(&mut self, payload: Vec<IpStatusPayload>) -> Result<()>;
     async fn get_ip_status(&mut self, ip: String) -> Result<IpStatus>;
 }
 
@@ -82,11 +85,25 @@ impl IpStatusOperations for Db {
             .await?)
     }
 
+    async fn bulk_insert_ip_status(&mut self, payload: Vec<IpStatusPayload>) -> Result<()> {
+        let mut pipe = redis::pipe();
+        let formatted: Vec<(String, i8)> =
+            payload.iter().map(|v| (v.ip.clone(), v.status)).collect();
+        pipe.hset_multiple(DB_STATUS_LIST, &formatted);
+        pipe.query_async(&mut self.connection).await?;
+
+        Ok(())
+    }
+
     async fn get_ip_status(&mut self, ip: String) -> Result<IpStatus> {
-        Ok(redis::cmd("HGET")
+        match redis::cmd("HGET")
             .arg(DB_STATUS_LIST)
             .arg(ip)
             .query_async(&mut self.connection)
-            .await?)
+            .await
+        {
+            Ok(i) => Ok(i),
+            Err(_) => Ok(IpStatus::None),
+        }
     }
 }
