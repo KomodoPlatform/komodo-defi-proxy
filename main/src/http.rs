@@ -4,7 +4,7 @@ use hyper::{
     header::{self, HeaderValue},
     Body, HeaderMap, Method, Request, Response, Server, StatusCode,
 };
-use redis::aio::MultiplexedConnection;
+use memory_db::*;
 use serde_json::json;
 use std::net::SocketAddr;
 
@@ -67,11 +67,13 @@ async fn proxy(mut req: Request<Body>) -> Result<Response<Body>> {
     response_by_status(StatusCode::NOT_FOUND)
 }
 
-async fn router(
-    req: Request<Body>,
-    _remote_addr: SocketAddr,
-    _r_connection: MultiplexedConnection,
-) -> Result<Response<Body>> {
+async fn router(req: Request<Body>, remote_addr: SocketAddr) -> Result<Response<Body>> {
+    let mut db = Db::create_instance().await;
+
+    if let IpStatus::Blocked = db.get_ip_status(remote_addr.ip().to_string()).await? {
+        return response_by_status(StatusCode::FORBIDDEN);
+    }
+
     if req.method() == Method::GET && req.uri().path() == "/" {
         return api_healthcheck().await;
     }
@@ -88,12 +90,7 @@ pub async fn serve() -> Result<()> {
 
     let router = make_service_fn(move |c_stream: &AddrStream| {
         let remote_addr = c_stream.remote_addr();
-        async move {
-            let r_connection = get_redis_connection().await;
-            Ok::<_, GenericError>(service_fn(move |req| {
-                router(req, remote_addr, r_connection.clone())
-            }))
-        }
+        async move { Ok::<_, GenericError>(service_fn(move |req| router(req, remote_addr))) }
     });
 
     let server = Server::bind(&addr).serve(router);
