@@ -23,7 +23,14 @@ Create the configuration file for app runtime.
 			"inbound_route": "/dev",
 			"outbound_route": "http://localhost:8000",
 		}
-	]
+	],
+	"rate_limiter": {
+		"rp_1_min": 30,
+		"rp_5_min": 100,
+		"rp_15_min": 200,
+		"rp_30_min": 350,
+		"rp_60_min": 575
+	}
 }
 ```
 
