@@ -35,7 +35,7 @@ async fn get_healthcheck() -> Result<Response<Body>> {
         .unwrap())
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct IpStatusPayload {
     pub ip: String,
     pub status: i8,
@@ -52,6 +52,26 @@ async fn post_ip_status(req: Request<Body>) -> Result<Response<Body>> {
         .status(StatusCode::NO_CONTENT)
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(Vec::new()))
+        .unwrap())
+}
+
+async fn get_ip_status_list() -> Result<Response<Body>> {
+    let mut db = Db::create_instance().await;
+    let list = db.read_ip_status_list().await?;
+
+    let list: Vec<IpStatusPayload> = list
+        .iter()
+        .map(|v| IpStatusPayload {
+            ip: v.0.clone(),
+            status: v.1,
+        })
+        .collect();
+    let serialized = serde_json::to_string(&list).unwrap();
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serialized))
         .unwrap())
 }
 
@@ -92,7 +112,9 @@ async fn router(req: Request<Body>, remote_addr: SocketAddr) -> Result<Response<
     let mut db = Db::create_instance().await;
     // db.insert_ip_status(remote_addr.ip().to_string(), IpStatus::Unrecognized).await?;
 
-    if let IpStatus::Blocked = db.get_ip_status(remote_addr.ip().to_string()).await? {
+    if IpStatus::Blocked == db.read_ip_status(remote_addr.ip().to_string()).await?
+        && remote_addr.ip().is_global()
+    {
         return response_by_status(StatusCode::FORBIDDEN);
     }
 
@@ -106,6 +128,12 @@ async fn router(req: Request<Body>, remote_addr: SocketAddr) -> Result<Response<
         }
 
         return post_ip_status(req).await;
+    } else if req.method() == Method::GET && req.uri().path() == "/ip-status" {
+        if remote_addr.ip().is_global() {
+            return response_by_status(StatusCode::FORBIDDEN);
+        }
+
+        return get_ip_status_list().await;
     }
 
     proxy(req).await

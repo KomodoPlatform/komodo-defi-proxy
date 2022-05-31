@@ -19,7 +19,7 @@ pub fn get_redis_client() -> &'static redis::Client {
     REDIS_CLIENT.get_or_init(client_closure)
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub enum IpStatus {
     /// Follow the normal procedure.
     None = -1,
@@ -72,7 +72,8 @@ impl Db {
 pub trait IpStatusOperations {
     async fn insert_ip_status(&mut self, ip: String, status: IpStatus) -> Result<()>;
     async fn bulk_insert_ip_status(&mut self, payload: Vec<IpStatusPayload>) -> Result<()>;
-    async fn get_ip_status(&mut self, ip: String) -> Result<IpStatus>;
+    async fn read_ip_status(&mut self, ip: String) -> Result<IpStatus>;
+    async fn read_ip_status_list(&mut self) -> Result<Vec<(String, i8)>>;
 }
 
 #[async_trait]
@@ -95,7 +96,7 @@ impl IpStatusOperations for Db {
         Ok(())
     }
 
-    async fn get_ip_status(&mut self, ip: String) -> Result<IpStatus> {
+    async fn read_ip_status(&mut self, ip: String) -> Result<IpStatus> {
         match redis::cmd("HGET")
             .arg(DB_STATUS_LIST)
             .arg(ip)
@@ -104,6 +105,17 @@ impl IpStatusOperations for Db {
         {
             Ok(i) => Ok(i),
             Err(_) => Ok(IpStatus::None),
+        }
+    }
+
+    async fn read_ip_status_list(&mut self) -> Result<Vec<(String, i8)>> {
+        match redis::cmd("HGETALL")
+            .arg(DB_STATUS_LIST)
+            .query_async(&mut self.connection)
+            .await
+        {
+            Ok(i) => Ok(i),
+            Err(_) => Ok(Vec::new()),
         }
     }
 }
