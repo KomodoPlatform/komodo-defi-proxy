@@ -9,6 +9,15 @@ use memory_db::*;
 use serde_json::json;
 use std::net::SocketAddr;
 
+#[derive(Debug, Deserialize)]
+pub struct RateLimiter {
+    pub rp_1_min: u16,
+    pub rp_5_min: u16,
+    pub rp_15_min: u16,
+    pub rp_30_min: u16,
+    pub rp_60_min: u16,
+}
+
 impl AppConfig {
     fn get_proxy_route_by_inbound(&self, inbound: String) -> Option<&ProxyRoute> {
         let route_index = self.proxy_routes.iter().position(|r| {
@@ -110,13 +119,18 @@ async fn proxy(mut req: Request<Body>) -> Result<Response<Body>> {
 
 async fn router(req: Request<Body>, remote_addr: SocketAddr) -> Result<Response<Body>> {
     let mut db = Db::create_instance().await;
-    // db.insert_ip_status(remote_addr.ip().to_string(), IpStatus::Unrecognized).await?;
+
+    if db.rate_exceeded(remote_addr.ip().to_string()).await? {
+        return response_by_status(StatusCode::TOO_MANY_REQUESTS);
+    }
 
     if IpStatus::Blocked == db.read_ip_status(remote_addr.ip().to_string()).await?
         && remote_addr.ip().is_global()
     {
         return response_by_status(StatusCode::FORBIDDEN);
     }
+
+    db.rate_ip(remote_addr.ip().to_string()).await?;
 
     // TODO
     // Will be refactored

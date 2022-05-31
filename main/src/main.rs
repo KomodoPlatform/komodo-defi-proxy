@@ -1,6 +1,7 @@
 #![feature(ip)]
 
 use crate::{http::serve, memory_db::get_redis_connection};
+use http::RateLimiter;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use once_cell::sync::OnceCell;
@@ -14,7 +15,7 @@ mod memory_db;
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
 type Result<T> = std::result::Result<T, GenericError>;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct AppConfig {
     pub port: Option<u16>,
     pub redis_connection_string: String,
@@ -22,6 +23,7 @@ pub struct AppConfig {
     pub privkey_path: String,
     pub token_expiration_time: Option<i64>,
     pub proxy_routes: Vec<ProxyRoute>,
+    pub rate_limiter: RateLimiter,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
