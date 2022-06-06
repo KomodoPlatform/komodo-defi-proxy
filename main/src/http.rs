@@ -5,6 +5,7 @@ use hyper::{
     header::{self, HeaderValue},
     Body, HeaderMap, Method, Request, Response, Server, StatusCode,
 };
+use hyper_tls::HttpsConnector;
 use memory_db::*;
 use serde_json::json;
 use std::net::SocketAddr;
@@ -109,8 +110,11 @@ async fn proxy(mut req: Request<Body>) -> Result<Response<Body>> {
         // Modify outgoing request
         insert_jwt_to_http_header(req.headers_mut()).await?;
         *req.uri_mut() = proxy_route.outbound_route.parse().unwrap();
+        req.headers_mut().remove(header::HOST);
 
-        let client = hyper::Client::new();
+        let https = HttpsConnector::new();
+        let client = hyper::Client::builder().build(https);
+
         return Ok(client.request(req).await.unwrap());
     }
 
