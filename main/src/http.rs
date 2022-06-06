@@ -121,6 +121,7 @@ async fn proxy(mut req: Request<Body>) -> Result<Response<Body>> {
             header::TRANSFER_ENCODING,
             header::TRAILER,
             header::UPGRADE,
+            header::HeaderName::from_static("keep-alive"),
         ] {
             req.headers_mut().remove(key);
         }
