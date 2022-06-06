@@ -126,10 +126,6 @@ async fn proxy(mut req: Request<Body>) -> Result<Response<Body>> {
             req.headers_mut().remove(key);
         }
 
-        // keep-alive header is not provided from `header`,
-        // so remove it by writing it hard-coded.
-        req.headers_mut().remove("keep-alive");
-
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build(https);
 
