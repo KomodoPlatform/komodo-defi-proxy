@@ -110,7 +110,24 @@ async fn proxy(mut req: Request<Body>) -> Result<Response<Body>> {
         // Modify outgoing request
         insert_jwt_to_http_header(req.headers_mut()).await?;
         *req.uri_mut() = proxy_route.outbound_route.parse().unwrap();
-        req.headers_mut().remove(header::HOST);
+
+        for key in &[
+            header::ACCEPT_ENCODING,
+            header::CONNECTION,
+            header::HOST,
+            header::PROXY_AUTHENTICATE,
+            header::PROXY_AUTHORIZATION,
+            header::TE,
+            header::TRANSFER_ENCODING,
+            header::TRAILER,
+            header::UPGRADE,
+        ] {
+            req.headers_mut().remove(key);
+        }
+
+        // keep-alive header is not provided from `header`,
+        // so remove it by writing it hard-coded.
+        req.headers_mut().remove("keep-alive");
 
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build(https);
