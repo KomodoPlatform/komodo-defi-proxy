@@ -22,6 +22,10 @@ Create the configuration file for app runtime.
 		{
 			"inbound_route": "/dev",
 			"outbound_route": "http://localhost:8000",
+			"allowed_methods": [
+				"eth_blockNumber",
+				"eth_gasPrice"
+			]
 		}
 	],
 	"rate_limiter": {

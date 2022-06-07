@@ -30,6 +30,7 @@ pub struct AppConfig {
 pub struct ProxyRoute {
     pub inbound_route: String,
     pub outbound_route: String,
+    pub allowed_methods: Vec<String>,
 }
 
 impl AppConfig {

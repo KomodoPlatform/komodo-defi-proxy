@@ -102,15 +102,35 @@ async fn insert_jwt_to_http_header(headers: &mut HeaderMap<HeaderValue>) -> Resu
     Ok(())
 }
 
-async fn proxy(mut req: Request<Body>) -> Result<Response<Body>> {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuickNodePayload {
+    pub method: String,
+    pub params: serde_json::value::Value,
+    pub id: usize,
+    pub jsonrpc: String,
+}
+
+async fn proxy(req: Request<Body>) -> Result<Response<Body>> {
     let config = get_app_config();
     let proxy_route = config.get_proxy_route_by_inbound(req.uri().to_string());
 
+    let (parts, body) = req.into_parts();
+    let body_bytes = hyper::body::to_bytes(body).await.unwrap();
+
+    let payload: QuickNodePayload = serde_json::from_slice(&body_bytes).unwrap();
+
+    let mut req = Request::from_parts(parts, Body::from(body_bytes));
     if let Some(proxy_route) = proxy_route {
-        // Modify outgoing request
+        // check if requested method allowed
+        if !proxy_route.allowed_methods.contains(&payload.method) {
+            return response_by_status(StatusCode::FORBIDDEN);
+        }
+
+        // modify outgoing request
         insert_jwt_to_http_header(req.headers_mut()).await?;
         *req.uri_mut() = proxy_route.outbound_route.parse().unwrap();
 
+        // drop hop headers
         for key in &[
             header::ACCEPT_ENCODING,
             header::CONNECTION,
