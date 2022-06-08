@@ -108,6 +108,15 @@ pub struct QuickNodePayload {
     pub params: serde_json::value::Value,
     pub id: usize,
     pub jsonrpc: String,
+    pub client_info: ClientInformation,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ClientInformation {
+    pub address: String,
+    pub coin: String,
+    pub message: String,
+    pub signed: String,
 }
 
 async fn proxy(req: Request<Body>) -> Result<Response<Body>> {

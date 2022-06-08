@@ -11,6 +11,8 @@ use std::env;
 mod http;
 mod jwt;
 mod memory_db;
+mod crypto;
+mod eth_poc;
 
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
 type Result<T> = std::result::Result<T, GenericError>;
@@ -50,6 +52,9 @@ fn get_app_config() -> &'static AppConfig {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let x = eth_poc::sign_message_hash("testing");
+    println!("{:?}", x);
+
     // to panic if redis is not available
     get_redis_connection().await;
 

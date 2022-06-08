@@ -12,7 +12,9 @@ path = "src/main.rs"
 async-trait = "0.1.53"
 bytes = "1.1.0"
 chrono = "0.4.19"
+ethkey = { git = "https://github.com/artemii235/parity-ethereum.git" }
 futures-util = "0.3.21"
+gstuff = { version = "0.7", features = ["nightly"] }
 hyper = { version = "0.14.18", features = ["server", "http1", "http2", "tcp", "client"] }
 hyper-tls = "0.5.0"
 jsonwebtoken = "8.1.0"
@@ -21,3 +23,8 @@ redis = { version = "0.21.5", features = ["tokio-comp"] }
 serde = "1.0.137"
 serde_json = "1.0.81"
 tokio = { version = "1.12.0", features = ["macros", "rt-multi-thread"] }
+ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
+serialization = { git = "https://github.com/KomodoPlatform/atomicDEX-API", branch = "dev" }
+serialization_derive = { git = "https://github.com/KomodoPlatform/atomicDEX-API", branch = "dev" }
+sha3 = "0.9"
+
