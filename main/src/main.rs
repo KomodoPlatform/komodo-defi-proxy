@@ -8,11 +8,13 @@ use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::env;
 
+use core::{convert::From, str::FromStr};
+
 mod http;
 mod jwt;
 mod memory_db;
-mod crypto;
 mod eth_poc;
+mod utxo_poc;
 
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
 type Result<T> = std::result::Result<T, GenericError>;
@@ -52,8 +54,12 @@ fn get_app_config() -> &'static AppConfig {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let x = keys::Address::from_str("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3");
+    println!("Address: {:?}", x);
     let x = eth_poc::sign_message_hash("testing");
-    println!("{:?}", x);
+    println!("eth signed: {:?}", x);
+    let x = utxo_poc::sign_message_hash("testing");
+    println!("utxo signed: {:?}", x);
 
     // to panic if redis is not available
     get_redis_connection().await;
