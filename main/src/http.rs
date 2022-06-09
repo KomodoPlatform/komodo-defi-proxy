@@ -13,7 +13,7 @@ use jwt::generate_jwt;
 use rate_limiter::RateLimitOperations;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sign::SignedMessage;
+use sign::{SignOps, SignedMessage};
 use std::net::SocketAddr;
 
 impl AppConfig {
@@ -68,16 +68,10 @@ pub struct QuickNodePayload {
     pub signed_message: SignedMessage,
 }
 
-async fn proxy(req: Request<Body>) -> GenericResult<Response<Body>> {
+async fn proxy(mut req: Request<Body>, payload: QuickNodePayload) -> GenericResult<Response<Body>> {
     let config = get_app_config();
     let proxy_route = config.get_proxy_route_by_inbound(req.uri().to_string());
 
-    let (parts, body) = req.into_parts();
-    let body_bytes = hyper::body::to_bytes(body).await.unwrap();
-
-    let payload: QuickNodePayload = serde_json::from_slice(&body_bytes).unwrap();
-
-    let mut req = Request::from_parts(parts, Body::from(body_bytes));
     if let Some(proxy_route) = proxy_route {
         // check if requested method allowed
         if !proxy_route.allowed_methods.contains(&payload.method) {
@@ -114,20 +108,6 @@ async fn proxy(req: Request<Body>) -> GenericResult<Response<Body>> {
 }
 
 async fn router(req: Request<Body>, remote_addr: SocketAddr) -> GenericResult<Response<Body>> {
-    let mut db = Db::create_instance().await;
-
-    if db.rate_exceeded(remote_addr.ip().to_string()).await? {
-        return response_by_status(StatusCode::TOO_MANY_REQUESTS);
-    }
-
-    if IpStatus::Blocked == db.read_ip_status(remote_addr.ip().to_string()).await?
-        && remote_addr.ip().is_global()
-    {
-        return response_by_status(StatusCode::FORBIDDEN);
-    }
-
-    db.rate_ip(remote_addr.ip().to_string()).await?;
-
     // TODO
     // Will be refactored
     if req.method() == Method::GET && req.uri().path() == "/" {
@@ -146,7 +126,32 @@ async fn router(req: Request<Body>, remote_addr: SocketAddr) -> GenericResult<Re
         return get_ip_status_list().await;
     }
 
-    proxy(req).await
+    let mut db = Db::create_instance().await;
+
+    if db.rate_exceeded(remote_addr.ip().to_string()).await? {
+        return response_by_status(StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    if IpStatus::Blocked == db.read_ip_status(remote_addr.ip().to_string()).await?
+        && remote_addr.ip().is_global()
+    {
+        return response_by_status(StatusCode::FORBIDDEN);
+    }
+
+    db.rate_ip(remote_addr.ip().to_string()).await?;
+
+    let (parts, body) = req.into_parts();
+    let body_bytes = hyper::body::to_bytes(body).await.unwrap();
+
+    let payload: QuickNodePayload = serde_json::from_slice(&body_bytes).unwrap();
+
+    if !payload.signed_message.verify_message() {
+        return response_by_status(StatusCode::UNAUTHORIZED);
+    }
+
+    let req = Request::from_parts(parts, Body::from(body_bytes));
+
+    proxy(req, payload).await
 }
 
 pub async fn serve() -> GenericResult<()> {
