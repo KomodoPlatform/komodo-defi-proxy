@@ -1,6 +1,7 @@
 #![feature(ip)]
 
 use crate::{http::serve, memory_db::get_redis_connection};
+use core::convert::From;
 use http::RateLimiter;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
@@ -8,13 +9,10 @@ use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::env;
 
-use core::{convert::From, str::FromStr};
-
+mod eth_poc;
 mod http;
 mod jwt;
 mod memory_db;
-mod eth_poc;
-mod utxo_poc;
 
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
 type Result<T> = std::result::Result<T, GenericError>;
@@ -54,12 +52,8 @@ fn get_app_config() -> &'static AppConfig {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let x = keys::Address::from_str("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3");
-    println!("Address: {:?}", x);
-    let x = eth_poc::sign_message_hash("testing");
-    println!("eth signed: {:?}", x);
-    let x = utxo_poc::sign_message_hash("testing");
-    println!("utxo signed: {:?}", x);
+    let x = eth_poc::verify_message("0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600", "test", "0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29");
+    println!("eth verification: {:?}", x);
 
     // to panic if redis is not available
     get_redis_connection().await;

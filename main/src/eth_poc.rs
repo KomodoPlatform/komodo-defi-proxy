@@ -1,5 +1,5 @@
-use core::{convert::From, str::FromStr};
 use bitcrypto::keccak256;
+use core::{convert::From, str::FromStr};
 use ethereum_types::{Address, H256};
 use ethkey::{verify_address, Signature};
 use gstuff::{try_s, ERR, ERRL};
@@ -8,7 +8,7 @@ use serialization::{CompactInteger, Serializable, Stream};
 use sha3::{Digest, Keccak256};
 
 pub fn sign_message_hash(message: &str) -> Option<[u8; 32]> {
-    let message_prefix = "test-prefix";
+    let message_prefix = "Ethereum Signed Message:\n";
     let mut stream = Stream::new();
     let prefix_len = CompactInteger::from(message_prefix.len());
     prefix_len.serialize(&mut stream);
@@ -69,7 +69,7 @@ pub fn addr_from_str(addr_str: &str) -> Result<Address, String> {
     Ok(try_s!(Address::from_str(&addr_str[2..])))
 }
 
-fn verify_message(signature: &str, message: &str, address: &str) -> bool {
+pub fn verify_message(signature: &str, message: &str, address: &str) -> bool {
     let message_hash = sign_message_hash(message).unwrap();
     let address = valid_addr_from_str(address).unwrap();
 
