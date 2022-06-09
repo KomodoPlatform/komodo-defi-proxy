@@ -1,5 +1,5 @@
 use super::*;
-use crate::jwt::generate_jwt;
+use crate::{jwt::generate_jwt, sign::SignedMessage};
 use bytes::Buf;
 use hyper::{
     header::{self, HeaderValue},
@@ -108,15 +108,7 @@ pub struct QuickNodePayload {
     pub params: serde_json::value::Value,
     pub id: usize,
     pub jsonrpc: String,
-    pub client_info: ClientInformation,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ClientInformation {
-    pub address: String,
-    pub coin: String,
-    pub message: String,
-    pub signed: String,
+    pub signed_message: SignedMessage,
 }
 
 async fn proxy(req: Request<Body>) -> Result<Response<Body>> {

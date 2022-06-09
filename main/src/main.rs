@@ -9,7 +9,7 @@ use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::env;
 
-mod eth_poc;
+mod sign;
 mod http;
 mod jwt;
 mod memory_db;
@@ -52,9 +52,6 @@ fn get_app_config() -> &'static AppConfig {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let x = eth_poc::verify_message("0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600", "test", "0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29");
-    println!("eth verification: {:?}", x);
-
     // to panic if redis is not available
     get_redis_connection().await;
 

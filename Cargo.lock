@@ -650,7 +650,6 @@ dependencies = [
  "redis",
  "serde",
  "serde_json",
- "serialization",
  "sha3",
  "tokio",
 ]
