@@ -1,23 +1,20 @@
 use super::*;
-use crate::{jwt::generate_jwt, sign::SignedMessage};
-use bytes::Buf;
+use ctx::{get_app_config, AppConfig, ProxyRoute};
+use db::*;
+use hyper::server::conn::AddrStream;
+use hyper::service::{make_service_fn, service_fn};
 use hyper::{
     header::{self, HeaderValue},
     Body, HeaderMap, Method, Request, Response, Server, StatusCode,
 };
 use hyper_tls::HttpsConnector;
-use memory_db::*;
+use ip_status::{get_ip_status_list, post_ip_status, IpStatus, IpStatusOperations};
+use jwt::generate_jwt;
+use rate_limiter::RateLimitOperations;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sign::SignedMessage;
 use std::net::SocketAddr;
-
-#[derive(Debug, Deserialize)]
-pub struct RateLimiter {
-    pub rp_1_min: u16,
-    pub rp_5_min: u16,
-    pub rp_15_min: u16,
-    pub rp_30_min: u16,
-    pub rp_60_min: u16,
-}
 
 impl AppConfig {
     fn get_proxy_route_by_inbound(&self, inbound: String) -> Option<&ProxyRoute> {
@@ -33,7 +30,7 @@ impl AppConfig {
     }
 }
 
-async fn get_healthcheck() -> Result<Response<Body>> {
+async fn get_healthcheck() -> GenericResult<Response<Body>> {
     let json = json!({
         "status": "healthy",
     });
@@ -45,54 +42,14 @@ async fn get_healthcheck() -> Result<Response<Body>> {
         .unwrap())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct IpStatusPayload {
-    pub ip: String,
-    pub status: i8,
-}
-
-async fn post_ip_status(req: Request<Body>) -> Result<Response<Body>> {
-    let whole_body = hyper::body::aggregate(req).await?;
-    let payload: Vec<IpStatusPayload> = serde_json::from_reader(whole_body.reader())?;
-
-    let mut db = Db::create_instance().await;
-    db.bulk_insert_ip_status(payload).await?;
-
-    Ok(Response::builder()
-        .status(StatusCode::NO_CONTENT)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(Vec::new()))
-        .unwrap())
-}
-
-async fn get_ip_status_list() -> Result<Response<Body>> {
-    let mut db = Db::create_instance().await;
-    let list = db.read_ip_status_list().await?;
-
-    let list: Vec<IpStatusPayload> = list
-        .iter()
-        .map(|v| IpStatusPayload {
-            ip: v.0.clone(),
-            status: v.1,
-        })
-        .collect();
-    let serialized = serde_json::to_string(&list).unwrap();
-
-    Ok(Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(serialized))
-        .unwrap())
-}
-
-fn response_by_status(status: StatusCode) -> Result<Response<Body>> {
+fn response_by_status(status: StatusCode) -> GenericResult<Response<Body>> {
     Ok(Response::builder()
         .status(status)
         .body(Body::from(Vec::new()))
         .unwrap())
 }
 
-async fn insert_jwt_to_http_header(headers: &mut HeaderMap<HeaderValue>) -> Result<()> {
+async fn insert_jwt_to_http_header(headers: &mut HeaderMap<HeaderValue>) -> GenericResult<()> {
     let auth_token = generate_jwt().await?;
     headers.insert(
         header::AUTHORIZATION,
@@ -111,7 +68,7 @@ pub struct QuickNodePayload {
     pub signed_message: SignedMessage,
 }
 
-async fn proxy(req: Request<Body>) -> Result<Response<Body>> {
+async fn proxy(req: Request<Body>) -> GenericResult<Response<Body>> {
     let config = get_app_config();
     let proxy_route = config.get_proxy_route_by_inbound(req.uri().to_string());
 
@@ -156,7 +113,7 @@ async fn proxy(req: Request<Body>) -> Result<Response<Body>> {
     response_by_status(StatusCode::NOT_FOUND)
 }
 
-async fn router(req: Request<Body>, remote_addr: SocketAddr) -> Result<Response<Body>> {
+async fn router(req: Request<Body>, remote_addr: SocketAddr) -> GenericResult<Response<Body>> {
     let mut db = Db::create_instance().await;
 
     if db.rate_exceeded(remote_addr.ip().to_string()).await? {
@@ -192,7 +149,7 @@ async fn router(req: Request<Body>, remote_addr: SocketAddr) -> Result<Response<
     proxy(req).await
 }
 
-pub async fn serve() -> Result<()> {
+pub async fn serve() -> GenericResult<()> {
     let config = get_app_config();
 
     let addr = format!("0.0.0.0:{}", config.port.unwrap_or(5000))

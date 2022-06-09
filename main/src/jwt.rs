@@ -1,7 +1,12 @@
 use super::*;
 use chrono::{Duration, Utc};
+use ctx::get_app_config;
 use jsonwebtoken::*;
+use once_cell::sync::OnceCell;
+use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Read};
+
+const TOKEN_ISSUER: &str = "ATOMICDEX-AUTH";
 
 #[derive(Debug, Serialize, Deserialize)]
 struct JwtClaims {
@@ -24,8 +29,6 @@ impl JwtClaims {
         }
     }
 }
-
-const TOKEN_ISSUER: &str = "ATOMICDEX-AUTH";
 
 static AUTH_DECODING_KEY: OnceCell<DecodingKey> = OnceCell::new();
 #[allow(dead_code)]
@@ -57,7 +60,7 @@ fn read_file_buffer(path: &str) -> Vec<u8> {
     buffer
 }
 
-pub async fn generate_jwt() -> Result<String> {
+pub async fn generate_jwt() -> GenericResult<String> {
     let config = get_app_config();
 
     Ok(encode(
