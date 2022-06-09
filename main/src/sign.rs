@@ -1,10 +1,13 @@
 use bitcrypto::keccak256;
+use chrono::{DateTime, Utc};
 use core::{convert::From, str::FromStr};
 use ethereum_types::{Address, H256};
 use ethkey::{verify_address, Signature};
 use gstuff::{try_s, ERR, ERRL};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
+
+const VALIDATION_DATE_FORMAT: &str = "%Y-%m-%d %H:%M:%S %z";
 
 pub trait SignOps {
     fn sign_message_hash(&self) -> [u8; 32];
@@ -20,6 +23,7 @@ pub struct SignedMessage {
     pub address: String,
     pub message: String,
     pub signature: String,
+    pub valid_until: String,
 }
 
 impl SignOps for SignedMessage {
@@ -87,24 +91,33 @@ impl SignOps for SignedMessage {
     }
 
     fn verify_message(&self) -> bool {
+        let now = Utc::now();
+        let valid_until = DateTime::parse_from_str(&self.valid_until, VALIDATION_DATE_FORMAT)
+            .expect("Invalid date format");
+
+        if now > valid_until {
+            return false;
+        }
+
         let message_hash = self.sign_message_hash();
         let address = self.valid_addr_from_str().unwrap();
 
         let signature =
             Signature::from_str(self.signature.strip_prefix("0x").unwrap_or(&self.signature))
                 .unwrap();
-        let is_verified = verify_address(&address, &signature, &H256::from(message_hash)).unwrap();
 
-        is_verified
+        verify_address(&address, &signature, &H256::from(message_hash)).unwrap()
     }
 }
 
 #[test]
 fn test_message_verification() {
+    let valid_until = Utc::now() + chrono::Duration::minutes(5);
     let message = SignedMessage {
         address: String::from("0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29"),
         message: String::from("test"),
         signature: String::from("0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600"),
+        valid_until: valid_until.format(VALIDATION_DATE_FORMAT).to_string(),
     };
 
     assert_eq!(message.verify_message(), true);

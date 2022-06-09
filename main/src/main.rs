@@ -9,10 +9,10 @@ use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::env;
 
-mod sign;
 mod http;
 mod jwt;
 mod memory_db;
+mod sign;
 
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
 type Result<T> = std::result::Result<T, GenericError>;
