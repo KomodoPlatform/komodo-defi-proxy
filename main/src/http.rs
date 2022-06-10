@@ -78,7 +78,7 @@ pub struct QuickNodePayload {
 async fn proxy(
     mut req: Request<Body>,
     payload: QuickNodePayload,
-    req_ip: String,
+    x_forwarded_for: HeaderValue,
 ) -> GenericResult<Response<Body>> {
     let config = get_app_config();
     let proxy_route = config.get_proxy_route_by_inbound(req.uri().to_string());
@@ -90,8 +90,16 @@ async fn proxy(
         }
 
         // modify outgoing request
-        insert_jwt_to_http_header(req.headers_mut()).await?;
-        *req.uri_mut() = proxy_route.outbound_route.parse()?;
+        if insert_jwt_to_http_header(req.headers_mut()).await.is_err() {
+            return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+
+        *req.uri_mut() = match proxy_route.outbound_route.parse() {
+            Ok(uri) => uri,
+            Err(_) => {
+                return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        };
 
         // drop hop headers
         for key in &[
@@ -111,13 +119,20 @@ async fn proxy(
 
         req.headers_mut().insert(
             header::HeaderName::from_static("x-forwarded-for"),
-            req_ip.parse()?,
+            x_forwarded_for,
         );
 
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build(https);
 
-        return Ok(client.request(req).await?);
+        let res = match client.request(req).await {
+            Ok(t) => t,
+            Err(_) => {
+                return response_by_status(StatusCode::SERVICE_UNAVAILABLE);
+            }
+        };
+
+        return Ok(res);
     }
 
     response_by_status(StatusCode::NOT_FOUND)
@@ -131,19 +146,26 @@ async fn router(req: Request<Body>, remote_addr: SocketAddr) -> GenericResult<Re
         }
     };
 
+    let x_forwarded_for: HeaderValue = match remote_addr.ip().to_string().parse() {
+        Ok(t) => t,
+        Err(_) => {
+            return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
     if !remote_addr.ip().is_global() {
         match (req.method(), req.uri().path()) {
             (&Method::GET, "/") => return get_healthcheck().await,
             (&Method::GET, "/ip-status") => return post_ip_status(req).await,
             (&Method::POST, "/ip-status") => return get_ip_status_list().await,
-            _ => return proxy(req, payload, remote_addr.ip().to_string()).await,
+            _ => return proxy(req, payload, x_forwarded_for).await,
         };
     }
 
     let mut db = Db::create_instance().await;
 
     match db.read_ip_status(remote_addr.ip().to_string()).await {
-        IpStatus::Trusted => proxy(req, payload, remote_addr.ip().to_string()).await,
+        IpStatus::Trusted => proxy(req, payload, x_forwarded_for).await,
         IpStatus::Blocked => response_by_status(StatusCode::FORBIDDEN),
         _ => {
             match db.rate_exceeded(remote_addr.ip().to_string()).await {
@@ -153,7 +175,10 @@ async fn router(req: Request<Body>, remote_addr: SocketAddr) -> GenericResult<Re
                 }
             }
 
-            db.rate_ip(remote_addr.ip().to_string()).await?;
+            if db.rate_ip(remote_addr.ip().to_string()).await.is_err() {
+                // TODO
+                // log
+            };
 
             // TODO
             // wallet balance validation via app configurations
@@ -164,7 +189,7 @@ async fn router(req: Request<Body>, remote_addr: SocketAddr) -> GenericResult<Re
                 }
             }
 
-            proxy(req, payload, remote_addr.ip().to_string()).await
+            proxy(req, payload, x_forwarded_for).await
         }
     }
 }
