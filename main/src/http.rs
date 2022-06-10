@@ -38,25 +38,32 @@ async fn get_healthcheck() -> GenericResult<Response<Body>> {
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json.to_string()))
-        .unwrap())
+        .body(Body::from(json.to_string()))?)
 }
 
 fn response_by_status(status: StatusCode) -> GenericResult<Response<Body>> {
     Ok(Response::builder()
         .status(status)
-        .body(Body::from(Vec::new()))
-        .unwrap())
+        .body(Body::from(Vec::new()))?)
 }
 
 async fn insert_jwt_to_http_header(headers: &mut HeaderMap<HeaderValue>) -> GenericResult<()> {
     let auth_token = generate_jwt().await?;
     headers.insert(
         header::AUTHORIZATION,
-        format!("Bearer {}", auth_token).parse().unwrap(),
+        format!("Bearer {}", auth_token).parse()?,
     );
 
     Ok(())
+}
+
+async fn parse_payload(req: Request<Body>) -> GenericResult<(Request<Body>, QuickNodePayload)> {
+    let (parts, body) = req.into_parts();
+    let body_bytes = hyper::body::to_bytes(body).await?;
+
+    let payload: QuickNodePayload = serde_json::from_slice(&body_bytes)?;
+
+    Ok((Request::from_parts(parts, Body::from(body_bytes)), payload))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -68,7 +75,11 @@ pub struct QuickNodePayload {
     pub signed_message: SignedMessage,
 }
 
-async fn proxy(mut req: Request<Body>, payload: QuickNodePayload) -> GenericResult<Response<Body>> {
+async fn proxy(
+    mut req: Request<Body>,
+    payload: QuickNodePayload,
+    req_ip: String,
+) -> GenericResult<Response<Body>> {
     let config = get_app_config();
     let proxy_route = config.get_proxy_route_by_inbound(req.uri().to_string());
 
@@ -80,7 +91,7 @@ async fn proxy(mut req: Request<Body>, payload: QuickNodePayload) -> GenericResu
 
         // modify outgoing request
         insert_jwt_to_http_header(req.headers_mut()).await?;
-        *req.uri_mut() = proxy_route.outbound_route.parse().unwrap();
+        *req.uri_mut() = proxy_route.outbound_route.parse()?;
 
         // drop hop headers
         for key in &[
@@ -98,68 +109,70 @@ async fn proxy(mut req: Request<Body>, payload: QuickNodePayload) -> GenericResu
             req.headers_mut().remove(key);
         }
 
+        req.headers_mut().insert(
+            header::HeaderName::from_static("x-forwarded-for"),
+            req_ip.parse()?,
+        );
+
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build(https);
 
-        return Ok(client.request(req).await.unwrap());
+        return Ok(client.request(req).await?);
     }
 
     response_by_status(StatusCode::NOT_FOUND)
 }
 
 async fn router(req: Request<Body>, remote_addr: SocketAddr) -> GenericResult<Response<Body>> {
-    // TODO
-    // Will be refactored
-    if req.method() == Method::GET && req.uri().path() == "/" {
-        return get_healthcheck().await;
-    } else if req.method() == Method::POST && req.uri().path() == "/ip-status" {
-        if remote_addr.ip().is_global() {
-            return response_by_status(StatusCode::FORBIDDEN);
+    let (req, payload) = match parse_payload(req).await {
+        Ok(t) => t,
+        Err(_) => {
+            return response_by_status(StatusCode::UNAUTHORIZED);
         }
+    };
 
-        return post_ip_status(req).await;
-    } else if req.method() == Method::GET && req.uri().path() == "/ip-status" {
-        if remote_addr.ip().is_global() {
-            return response_by_status(StatusCode::FORBIDDEN);
-        }
-
-        return get_ip_status_list().await;
+    if !remote_addr.ip().is_global() {
+        match (req.method(), req.uri().path()) {
+            (&Method::GET, "/") => return get_healthcheck().await,
+            (&Method::GET, "/ip-status") => return post_ip_status(req).await,
+            (&Method::POST, "/ip-status") => return get_ip_status_list().await,
+            _ => return proxy(req, payload, remote_addr.ip().to_string()).await,
+        };
     }
 
     let mut db = Db::create_instance().await;
 
-    if db.rate_exceeded(remote_addr.ip().to_string()).await? {
-        return response_by_status(StatusCode::TOO_MANY_REQUESTS);
+    match db.read_ip_status(remote_addr.ip().to_string()).await {
+        IpStatus::Trusted => proxy(req, payload, remote_addr.ip().to_string()).await,
+        IpStatus::Blocked => response_by_status(StatusCode::FORBIDDEN),
+        _ => {
+            match db.rate_exceeded(remote_addr.ip().to_string()).await {
+                Ok(false) => {}
+                _ => {
+                    return response_by_status(StatusCode::TOO_MANY_REQUESTS);
+                }
+            }
+
+            db.rate_ip(remote_addr.ip().to_string()).await?;
+
+            // TODO
+            // wallet balance validation via app configurations
+            match payload.signed_message.verify_message() {
+                Ok(true) => {}
+                _ => {
+                    return response_by_status(StatusCode::UNAUTHORIZED);
+                }
+            }
+
+            proxy(req, payload, remote_addr.ip().to_string()).await
+        }
     }
-
-    if IpStatus::Blocked == db.read_ip_status(remote_addr.ip().to_string()).await?
-        && remote_addr.ip().is_global()
-    {
-        return response_by_status(StatusCode::FORBIDDEN);
-    }
-
-    db.rate_ip(remote_addr.ip().to_string()).await?;
-
-    let (parts, body) = req.into_parts();
-    let body_bytes = hyper::body::to_bytes(body).await.unwrap();
-
-    let payload: QuickNodePayload = serde_json::from_slice(&body_bytes).unwrap();
-
-    if !payload.signed_message.verify_message() {
-        return response_by_status(StatusCode::UNAUTHORIZED);
-    }
-
-    let req = Request::from_parts(parts, Body::from(body_bytes));
-
-    proxy(req, payload).await
 }
 
 pub async fn serve() -> GenericResult<()> {
     let config = get_app_config();
 
-    let addr = format!("0.0.0.0:{}", config.port.unwrap_or(5000))
-        .parse()
-        .unwrap();
+    let addr = format!("0.0.0.0:{}", config.port.unwrap_or(5000)).parse()?;
 
     let router = make_service_fn(move |c_stream: &AddrStream| {
         let remote_addr = c_stream.remote_addr();

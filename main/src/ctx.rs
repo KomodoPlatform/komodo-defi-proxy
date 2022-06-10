@@ -1,3 +1,4 @@
+use super::*;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -5,7 +6,9 @@ use std::env;
 static CONFIG: OnceCell<AppConfig> = OnceCell::new();
 
 pub fn get_app_config() -> &'static AppConfig {
-    CONFIG.get_or_init(AppConfig::from_fs)
+    CONFIG.get_or_init(|| {
+        AppConfig::from_fs().expect("Error reading application configuration from fs.")
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -36,10 +39,10 @@ pub struct RateLimiter {
 }
 
 impl AppConfig {
-    fn from_fs() -> Self {
+    fn from_fs() -> GenericResult<Self> {
         let config_path =
             env::var("AUTH_APP_CONFIG_PATH").expect("AUTH_APP_CONFIG_PATH must be defined.");
-        let file = std::fs::read_to_string(config_path).unwrap();
-        serde_json::from_str(&file).unwrap()
+        let file = std::fs::read_to_string(config_path)?;
+        Ok(serde_json::from_str(&file)?)
     }
 }

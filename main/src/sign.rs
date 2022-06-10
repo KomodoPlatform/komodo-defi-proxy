@@ -1,9 +1,9 @@
+use super::*;
 use bitcrypto::keccak256;
 use chrono::{DateTime, Utc};
 use core::{convert::From, str::FromStr};
 use ethereum_types::{Address, H256};
 use ethkey::{verify_address, Signature};
-use gstuff::{try_s, ERR, ERRL};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
@@ -15,7 +15,7 @@ pub trait SignOps {
     fn is_valid_checksum_addr(&self) -> bool;
     fn valid_addr_from_str(&self) -> Result<Address, String>;
     fn addr_from_str(&self) -> Result<Address, String>;
-    fn verify_message(&self) -> bool;
+    fn verify_message(&self) -> GenericResult<bool>;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -75,38 +75,40 @@ impl SignOps for SignedMessage {
     }
 
     fn valid_addr_from_str(&self) -> Result<Address, String> {
-        let addr = try_s!(self.addr_from_str());
+        let addr = self.addr_from_str()?;
         if !self.is_valid_checksum_addr() {
-            return ERR!("Invalid address checksum");
+            return Err(String::from("Invalid address checksum"));
         }
         Ok(addr)
     }
 
     fn addr_from_str(&self) -> Result<Address, String> {
         if !self.address.starts_with("0x") {
-            return ERR!("Address must be prefixed with 0x");
+            return Err(String::from("Address must be prefixed with 0x"));
         };
 
-        Ok(try_s!(Address::from_str(&self.address[2..])))
+        Address::from_str(&self.address[2..]).map_err(|e| e.to_string())
     }
 
-    fn verify_message(&self) -> bool {
+    fn verify_message(&self) -> GenericResult<bool> {
         let now = Utc::now();
-        let valid_until = DateTime::parse_from_str(&self.valid_until, VALIDATION_DATE_FORMAT)
-            .expect("Invalid date format");
+        let valid_until = DateTime::parse_from_str(&self.valid_until, VALIDATION_DATE_FORMAT)?;
 
         if now > valid_until {
-            return false;
+            return Ok(false);
         }
 
         let message_hash = self.sign_message_hash();
-        let address = self.valid_addr_from_str().unwrap();
+        let address = self.valid_addr_from_str()?;
 
         let signature =
-            Signature::from_str(self.signature.strip_prefix("0x").unwrap_or(&self.signature))
-                .unwrap();
+            Signature::from_str(self.signature.strip_prefix("0x").unwrap_or(&self.signature))?;
 
-        verify_address(&address, &signature, &H256::from(message_hash)).unwrap()
+        Ok(verify_address(
+            &address,
+            &signature,
+            &H256::from(message_hash),
+        )?)
     }
 }
 
@@ -120,5 +122,5 @@ fn test_message_verification() {
         valid_until: valid_until.format(VALIDATION_DATE_FORMAT).to_string(),
     };
 
-    assert_eq!(message.verify_message(), true);
+    assert_eq!(message.verify_message().unwrap(), true);
 }

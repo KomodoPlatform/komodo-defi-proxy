@@ -24,13 +24,12 @@ pub async fn post_ip_status(req: Request<Body>) -> GenericResult<Response<Body>>
     Ok(Response::builder()
         .status(StatusCode::NO_CONTENT)
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(Vec::new()))
-        .unwrap())
+        .body(Body::from(Vec::new()))?)
 }
 
 pub async fn get_ip_status_list() -> GenericResult<Response<Body>> {
     let mut db = Db::create_instance().await;
-    let list = db.read_ip_status_list().await?;
+    let list = db.read_ip_status_list().await;
 
     let list: Vec<IpStatusPayload> = list
         .iter()
@@ -39,13 +38,12 @@ pub async fn get_ip_status_list() -> GenericResult<Response<Body>> {
             status: v.1,
         })
         .collect();
-    let serialized = serde_json::to_string(&list).unwrap();
+    let serialized = serde_json::to_string(&list)?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(serialized))
-        .unwrap())
+        .body(Body::from(serialized))?)
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -80,8 +78,8 @@ impl FromRedisValue for IpStatus {
 pub trait IpStatusOperations {
     async fn insert_ip_status(&mut self, ip: String, status: IpStatus) -> GenericResult<()>;
     async fn bulk_insert_ip_status(&mut self, payload: Vec<IpStatusPayload>) -> GenericResult<()>;
-    async fn read_ip_status(&mut self, ip: String) -> GenericResult<IpStatus>;
-    async fn read_ip_status_list(&mut self) -> GenericResult<Vec<(String, i8)>>;
+    async fn read_ip_status(&mut self, ip: String) -> IpStatus;
+    async fn read_ip_status_list(&mut self) -> Vec<(String, i8)>;
 }
 
 #[async_trait]
@@ -104,20 +102,20 @@ impl IpStatusOperations for Db {
         Ok(())
     }
 
-    async fn read_ip_status(&mut self, ip: String) -> GenericResult<IpStatus> {
-        Ok(redis::cmd("HGET")
+    async fn read_ip_status(&mut self, ip: String) -> IpStatus {
+        redis::cmd("HGET")
             .arg(DB_STATUS_LIST)
             .arg(ip)
             .query_async(&mut self.connection)
             .await
-            .unwrap_or(IpStatus::None))
+            .unwrap_or(IpStatus::None)
     }
 
-    async fn read_ip_status_list(&mut self) -> GenericResult<Vec<(String, i8)>> {
-        Ok(redis::cmd("HGETALL")
+    async fn read_ip_status_list(&mut self) -> Vec<(String, i8)> {
+        redis::cmd("HGETALL")
             .arg(DB_STATUS_LIST)
             .query_async(&mut self.connection)
             .await
-            .unwrap_or_default())
+            .unwrap_or_default()
     }
 }

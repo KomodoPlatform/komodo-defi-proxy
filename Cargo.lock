@@ -408,16 +408,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gstuff"
-version = "0.7.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c495d42791143a3be6d33e5f442c35118ffc0819bd867bfe355b4cb6bfc20ee"
-dependencies = [
- "lazy_static",
- "libc",
-]
-
-[[package]]
 name = "h2"
 version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -641,7 +631,6 @@ dependencies = [
  "ethereum-types",
  "ethkey",
  "futures-util",
- "gstuff",
  "hyper",
  "hyper-tls",
  "jsonwebtoken",
