@@ -123,7 +123,7 @@ impl SignOps for SignedMessage {
 }
 
 #[test]
-fn test_message_verification() {
+fn test_message_sign_and_verify() {
     let date_message = Utc::now() + chrono::Duration::minutes(5);
     let date_message = date_message.format(VALIDATION_DATE_FORMAT).to_string();
 
