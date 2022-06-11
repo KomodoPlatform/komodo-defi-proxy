@@ -31,7 +31,7 @@ impl SignOps for SignedMessage {
         *keccak256(
             format!(
                 "{}{}{}",
-                "\x19aDEX Auth Signed Message:\n",
+                "\x19aDEX Auth Ethereum Signed Message:\n",
                 self.date_message.len(),
                 self.date_message
             )
