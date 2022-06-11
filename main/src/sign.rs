@@ -31,7 +31,7 @@ impl SignOps for SignedMessage {
         *keccak256(
             format!(
                 "{}{}{}",
-                "\x19Ethereum Signed Message:\n",
+                "\x19aDEX Auth Signed Message:\n",
                 self.date_message.len(),
                 self.date_message
             )
@@ -91,10 +91,7 @@ impl SignOps for SignedMessage {
     }
 
     fn sign_message(&mut self, secret: &Secret) -> GenericResult<()> {
-        let message_hash = self.sign_message_hash();
-
-        let signature = sign(secret, &H256::from(message_hash)).unwrap();
-
+        let signature = sign(secret, &H256::from(self.sign_message_hash()))?;
         self.signature = format!("0x{}", signature);
 
         Ok(())
