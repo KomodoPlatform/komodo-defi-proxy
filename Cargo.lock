@@ -631,6 +631,7 @@ dependencies = [
  "ethereum-types",
  "ethkey",
  "futures-util",
+ "hex",
  "hyper",
  "hyper-tls",
  "jsonwebtoken",

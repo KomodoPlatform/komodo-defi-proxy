@@ -3,7 +3,7 @@ use bitcrypto::keccak256;
 use chrono::{DateTime, Utc};
 use core::{convert::From, str::FromStr};
 use ethereum_types::{Address, H256};
-use ethkey::{verify_address, Signature};
+use ethkey::{sign, verify_address, Secret, Signature};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
@@ -15,15 +15,15 @@ pub trait SignOps {
     fn is_valid_checksum_addr(&self) -> bool;
     fn valid_addr_from_str(&self) -> Result<Address, String>;
     fn addr_from_str(&self) -> Result<Address, String>;
+    fn sign_message(&mut self, secret: &Secret) -> GenericResult<()>;
     fn verify_message(&self) -> GenericResult<bool>;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignedMessage {
     pub address: String,
-    pub message: String,
+    pub date_message: String,
     pub signature: String,
-    pub valid_until: String,
 }
 
 impl SignOps for SignedMessage {
@@ -32,8 +32,8 @@ impl SignOps for SignedMessage {
             format!(
                 "{}{}{}",
                 "\x19Ethereum Signed Message:\n",
-                self.message.len(),
-                self.message
+                self.date_message.len(),
+                self.date_message
             )
             .as_bytes(),
         )
@@ -90,9 +90,19 @@ impl SignOps for SignedMessage {
         Address::from_str(&self.address[2..]).map_err(|e| e.to_string())
     }
 
+    fn sign_message(&mut self, secret: &Secret) -> GenericResult<()> {
+        let message_hash = self.sign_message_hash();
+
+        let signature = sign(secret, &H256::from(message_hash)).unwrap();
+
+        self.signature = format!("0x{}", signature);
+
+        Ok(())
+    }
+
     fn verify_message(&self) -> GenericResult<bool> {
         let now = Utc::now();
-        let valid_until = DateTime::parse_from_str(&self.valid_until, VALIDATION_DATE_FORMAT)?;
+        let valid_until = DateTime::parse_from_str(&self.date_message, VALIDATION_DATE_FORMAT)?;
 
         if now > valid_until {
             return Ok(false);
@@ -114,13 +124,21 @@ impl SignOps for SignedMessage {
 
 #[test]
 fn test_message_verification() {
-    let valid_until = Utc::now() + chrono::Duration::minutes(5);
-    let message = SignedMessage {
+    let date_message = Utc::now() + chrono::Duration::minutes(5);
+    let date_message = date_message.format(VALIDATION_DATE_FORMAT).to_string();
+
+    let key_pair = ethkey::KeyPair::from_secret_slice(
+        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
+    )
+    .unwrap();
+
+    let mut signed_message = SignedMessage {
         address: String::from("0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29"),
-        message: String::from("test"),
-        signature: String::from("0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600"),
-        valid_until: valid_until.format(VALIDATION_DATE_FORMAT).to_string(),
+        date_message,
+        signature: String::new(),
     };
 
-    assert_eq!(message.verify_message().unwrap(), true);
+    signed_message.sign_message(&key_pair.secret()).unwrap();
+
+    assert_eq!(signed_message.verify_message().unwrap(), true);
 }
