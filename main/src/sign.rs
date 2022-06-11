@@ -124,16 +124,16 @@ fn test_message_sign_and_verify() {
     let date_message = Utc::now() + chrono::Duration::minutes(5);
     let date_message = date_message.format(VALIDATION_DATE_FORMAT).to_string();
 
-    let key_pair = ethkey::KeyPair::from_secret_slice(
-        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
-    )
-    .unwrap();
-
     let mut signed_message = SignedMessage {
         address: String::from("0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29"),
         date_message,
         signature: String::new(),
     };
+
+    let key_pair = ethkey::KeyPair::from_secret_slice(
+        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
+    )
+    .unwrap();
 
     signed_message.sign_message(&key_pair.secret()).unwrap();
 
