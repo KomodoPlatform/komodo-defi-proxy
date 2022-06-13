@@ -4,14 +4,14 @@ use ctx::get_app_config;
 use db::Db;
 use redis::Pipeline;
 
-pub const DB_RP_1_MIN: &str = "rp:1_min";
-pub const DB_RP_5_MIN: &str = "rp:5_min";
-pub const DB_RP_15_MIN: &str = "rp:15_min";
-pub const DB_RP_30_MIN: &str = "rp:30_min";
-pub const DB_RP_60_MIN: &str = "rp:60_min";
+pub(crate) const DB_RP_1_MIN: &str = "rp:1_min";
+pub(crate) const DB_RP_5_MIN: &str = "rp:5_min";
+pub(crate) const DB_RP_15_MIN: &str = "rp:15_min";
+pub(crate) const DB_RP_30_MIN: &str = "rp:30_min";
+pub(crate) const DB_RP_60_MIN: &str = "rp:60_min";
 
 #[async_trait]
-pub trait RateLimitOperations {
+pub(crate) trait RateLimitOperations {
     async fn upsert_ip_rate_in_pipe(
         &mut self,
         pipe: &mut Pipeline,

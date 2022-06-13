@@ -5,15 +5,15 @@ use hyper_tls::HttpsConnector;
 use serde::{Deserialize, Serialize};
 use serde_json::from_reader;
 
-pub type Json = serde_json::Value;
+pub(crate) type Json = serde_json::Value;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RpcClient {
-    pub url: String,
+pub(crate) struct RpcClient {
+    pub(crate) url: String,
 }
 
 impl RpcClient {
-    pub fn new(url: String) -> Self {
+    pub(crate) fn new(url: String) -> Self {
         RpcClient { url }
     }
 

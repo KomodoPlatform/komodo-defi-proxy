@@ -9,7 +9,7 @@ use sha3::{Digest, Keccak256};
 
 const VALIDATION_DATE_FORMAT: &str = "%Y-%m-%d %H:%M:%S %z";
 
-pub trait SignOps {
+pub(crate) trait SignOps {
     fn sign_message_hash(&self) -> [u8; 32];
     fn checksum_address(&self) -> String;
     fn is_valid_checksum_addr(&self) -> bool;
@@ -20,10 +20,10 @@ pub trait SignOps {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SignedMessage {
-    pub address: String,
-    pub date_message: String,
-    pub signature: String,
+pub(crate) struct SignedMessage {
+    pub(crate) address: String,
+    pub(crate) date_message: String,
+    pub(crate) signature: String,
 }
 
 impl SignOps for SignedMessage {

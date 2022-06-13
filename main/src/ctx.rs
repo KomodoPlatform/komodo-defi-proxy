@@ -6,44 +6,44 @@ use std::env;
 
 static CONFIG: OnceCell<AppConfig> = OnceCell::new();
 
-pub fn get_app_config() -> &'static AppConfig {
+pub(crate) fn get_app_config() -> &'static AppConfig {
     CONFIG.get_or_init(|| {
         AppConfig::from_fs().expect("Error reading application configuration from fs.")
     })
 }
 
-#[derive(Debug, Deserialize)]
-pub struct AppConfig {
-    pub port: Option<u16>,
-    pub redis_connection_string: String,
-    pub pubkey_path: String,
-    pub privkey_path: String,
-    pub token_expiration_time: Option<i64>,
-    pub proxy_routes: Vec<ProxyRoute>,
-    pub rate_limiter: RateLimiter,
-    pub nodes: Vec<Node>,
+#[derive(Deserialize)]
+pub(crate) struct AppConfig {
+    pub(crate) port: Option<u16>,
+    pub(crate) redis_connection_string: String,
+    pub(crate) pubkey_path: String,
+    pub(crate) privkey_path: String,
+    pub(crate) token_expiration_time: Option<i64>,
+    pub(crate) proxy_routes: Vec<ProxyRoute>,
+    pub(crate) rate_limiter: RateLimiter,
+    pub(crate) nodes: Vec<Node>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProxyRoute {
-    pub inbound_route: String,
-    pub outbound_route: String,
-    pub allowed_methods: Vec<String>,
+#[derive(Serialize, Deserialize)]
+pub(crate) struct ProxyRoute {
+    pub(crate) inbound_route: String,
+    pub(crate) outbound_route: String,
+    pub(crate) allowed_methods: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct RateLimiter {
-    pub rp_1_min: u16,
-    pub rp_5_min: u16,
-    pub rp_15_min: u16,
-    pub rp_30_min: u16,
-    pub rp_60_min: u16,
+#[derive(Deserialize)]
+pub(crate) struct RateLimiter {
+    pub(crate) rp_1_min: u16,
+    pub(crate) rp_5_min: u16,
+    pub(crate) rp_15_min: u16,
+    pub(crate) rp_30_min: u16,
+    pub(crate) rp_60_min: u16,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Node {
-    pub name: String,
-    pub url: String,
+#[derive(Serialize, Deserialize)]
+pub(crate) struct Node {
+    pub(crate) name: String,
+    pub(crate) url: String,
 }
 
 impl AppConfig {

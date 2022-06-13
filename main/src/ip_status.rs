@@ -6,15 +6,15 @@ use hyper::{header, Body, Request, Response, StatusCode};
 use redis::FromRedisValue;
 use serde::{Deserialize, Serialize};
 
-pub const DB_STATUS_LIST: &str = "status_list";
+pub(crate) const DB_STATUS_LIST: &str = "status_list";
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct IpStatusPayload {
-    pub ip: String,
-    pub status: i8,
+pub(crate) struct IpStatusPayload {
+    pub(crate) ip: String,
+    pub(crate) status: i8,
 }
 
-pub async fn post_ip_status(req: Request<Body>) -> GenericResult<Response<Body>> {
+pub(crate) async fn post_ip_status(req: Request<Body>) -> GenericResult<Response<Body>> {
     let whole_body = hyper::body::aggregate(req).await?;
     let payload: Vec<IpStatusPayload> = serde_json::from_reader(whole_body.reader())?;
 
@@ -27,7 +27,7 @@ pub async fn post_ip_status(req: Request<Body>) -> GenericResult<Response<Body>>
         .body(Body::from(Vec::new()))?)
 }
 
-pub async fn get_ip_status_list() -> GenericResult<Response<Body>> {
+pub(crate) async fn get_ip_status_list() -> GenericResult<Response<Body>> {
     let mut db = Db::create_instance().await;
     let list = db.read_ip_status_list().await;
 
@@ -47,7 +47,7 @@ pub async fn get_ip_status_list() -> GenericResult<Response<Body>> {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-pub enum IpStatus {
+pub(crate) enum IpStatus {
     /// Follow the normal procedure.
     None = -1,
     /// Means incoming request will be respond as `403 Forbidden`.
@@ -57,7 +57,7 @@ pub enum IpStatus {
 }
 
 impl IpStatus {
-    pub fn from_i8(value: i8) -> Self {
+    pub(crate) fn from_i8(value: i8) -> Self {
         match value {
             0 => Self::Trusted,
             1 => Self::Blocked,
@@ -75,7 +75,7 @@ impl FromRedisValue for IpStatus {
 }
 
 #[async_trait]
-pub trait IpStatusOperations {
+pub(crate) trait IpStatusOperations {
     async fn insert_ip_status(&mut self, ip: String, status: IpStatus) -> GenericResult<()>;
     async fn bulk_insert_ip_status(&mut self, payload: Vec<IpStatusPayload>) -> GenericResult<()>;
     async fn read_ip_status(&mut self, ip: String) -> IpStatus;

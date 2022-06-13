@@ -32,7 +32,7 @@ impl JwtClaims {
 
 static AUTH_DECODING_KEY: OnceCell<DecodingKey> = OnceCell::new();
 #[allow(dead_code)]
-pub fn get_decoding_key() -> &'static DecodingKey {
+pub(crate) fn get_decoding_key() -> &'static DecodingKey {
     let config = get_app_config();
 
     let buffer = read_file_buffer(&config.pubkey_path);
@@ -42,7 +42,7 @@ pub fn get_decoding_key() -> &'static DecodingKey {
 }
 
 static AUTH_ENCODING_KEY: OnceCell<EncodingKey> = OnceCell::new();
-pub fn get_encoding_key() -> &'static EncodingKey {
+pub(crate) fn get_encoding_key() -> &'static EncodingKey {
     let config = get_app_config();
 
     let buffer = read_file_buffer(&config.privkey_path);
@@ -60,7 +60,7 @@ fn read_file_buffer(path: &str) -> Vec<u8> {
     buffer
 }
 
-pub async fn generate_jwt() -> GenericResult<String> {
+pub(crate) async fn generate_jwt() -> GenericResult<String> {
     let config = get_app_config();
 
     Ok(encode(

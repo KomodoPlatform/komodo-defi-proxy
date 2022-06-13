@@ -67,12 +67,12 @@ async fn parse_payload(req: Request<Body>) -> GenericResult<(Request<Body>, Quic
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct QuickNodePayload {
-    pub method: String,
-    pub params: serde_json::value::Value,
-    pub id: usize,
-    pub jsonrpc: String,
-    pub signed_message: SignedMessage,
+pub(crate) struct QuickNodePayload {
+    pub(crate) method: String,
+    pub(crate) params: serde_json::value::Value,
+    pub(crate) id: usize,
+    pub(crate) jsonrpc: String,
+    pub(crate) signed_message: SignedMessage,
 }
 
 async fn proxy(
@@ -198,7 +198,7 @@ async fn router(req: Request<Body>, remote_addr: SocketAddr) -> GenericResult<Re
     }
 }
 
-pub async fn serve() -> GenericResult<()> {
+pub(crate) async fn serve() -> GenericResult<()> {
     let config = get_app_config();
 
     let addr = format!("0.0.0.0:{}", config.port.unwrap_or(5000)).parse()?;
