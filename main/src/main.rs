@@ -9,6 +9,7 @@ mod http;
 mod ip_status;
 mod jwt;
 mod rate_limiter;
+mod rpc;
 mod sign;
 
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
