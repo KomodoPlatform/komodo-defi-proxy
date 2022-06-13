@@ -139,6 +139,15 @@ async fn proxy(
 }
 
 async fn router(req: Request<Body>, remote_addr: SocketAddr) -> GenericResult<Response<Body>> {
+    if !remote_addr.ip().is_global() {
+        match (req.method(), req.uri().path()) {
+            (&Method::GET, "/") => return get_healthcheck().await,
+            (&Method::GET, "/ip-status") => return post_ip_status(req).await,
+            (&Method::POST, "/ip-status") => return get_ip_status_list().await,
+            _ => {}
+        };
+    };
+
     let (req, payload) = match parse_payload(req).await {
         Ok(t) => t,
         Err(_) => {
@@ -154,12 +163,7 @@ async fn router(req: Request<Body>, remote_addr: SocketAddr) -> GenericResult<Re
     };
 
     if !remote_addr.ip().is_global() {
-        match (req.method(), req.uri().path()) {
-            (&Method::GET, "/") => return get_healthcheck().await,
-            (&Method::GET, "/ip-status") => return post_ip_status(req).await,
-            (&Method::POST, "/ip-status") => return get_ip_status_list().await,
-            _ => return proxy(req, payload, x_forwarded_for).await,
-        };
+        return proxy(req, payload, x_forwarded_for).await;
     }
 
     let mut db = Db::create_instance().await;
