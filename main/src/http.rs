@@ -41,7 +41,7 @@ async fn get_healthcheck() -> GenericResult<Response<Body>> {
         .body(Body::from(json.to_string()))?)
 }
 
-fn response_by_status(status: StatusCode) -> GenericResult<Response<Body>> {
+pub(crate) fn response_by_status(status: StatusCode) -> GenericResult<Response<Body>> {
     Ok(Response::builder()
         .status(status)
         .body(Body::from(Vec::new()))?)
