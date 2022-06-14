@@ -5,17 +5,17 @@ use redis::aio::MultiplexedConnection;
 
 static REDIS_CLIENT: OnceCell<redis::Client> = OnceCell::new();
 
-pub(crate) fn get_redis_client(config: &AppConfig) -> &'static redis::Client {
+pub(crate) fn get_redis_client(cfg: &AppConfig) -> &'static redis::Client {
     let client_closure = || {
-        redis::Client::open(config.redis_connection_string.clone())
+        redis::Client::open(cfg.redis_connection_string.clone())
             .expect("Couldn't connect to redis server.")
     };
 
     REDIS_CLIENT.get_or_init(client_closure)
 }
 
-pub(crate) async fn get_redis_connection(config: &AppConfig) -> MultiplexedConnection {
-    let client = get_redis_client(config);
+pub(crate) async fn get_redis_connection(cfg: &AppConfig) -> MultiplexedConnection {
+    let client = get_redis_client(cfg);
 
     client
         .get_multiplexed_tokio_connection()
@@ -28,9 +28,9 @@ pub(crate) struct Db {
 }
 
 impl Db {
-    pub(crate) async fn create_instance(config: &AppConfig) -> Self {
+    pub(crate) async fn create_instance(cfg: &AppConfig) -> Self {
         Self {
-            connection: get_redis_connection(config).await,
+            connection: get_redis_connection(cfg).await,
         }
     }
 }

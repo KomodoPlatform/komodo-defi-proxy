@@ -16,8 +16,8 @@ pub(crate) struct IpStatusPayload {
 }
 
 pub(crate) async fn post_ip_status(
-    req: Request<Body>,
     cfg: &AppConfig,
+    req: Request<Body>,
 ) -> GenericResult<Response<Body>> {
     let whole_body = hyper::body::aggregate(req).await?;
     let payload: Vec<IpStatusPayload> = serde_json::from_reader(whole_body.reader())?;

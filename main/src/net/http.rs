@@ -147,8 +147,8 @@ async fn router(
     if !remote_addr.ip().is_global() {
         match (req.method(), req.uri().path()) {
             (&Method::GET, "/") => return get_healthcheck().await,
-            (&Method::GET, "/ip-status") => return post_ip_status(req, &cfg).await,
-            (&Method::POST, "/ip-status") => return get_ip_status_list(&cfg).await,
+            (&Method::GET, "/ip-status") => return post_ip_status(cfg, req).await,
+            (&Method::POST, "/ip-status") => return get_ip_status_list(cfg).await,
             _ => {}
         };
     };
@@ -171,7 +171,7 @@ async fn router(
         return proxy(cfg, req, payload, x_forwarded_for).await;
     }
 
-    let mut db = Db::create_instance(&cfg).await;
+    let mut db = Db::create_instance(cfg).await;
 
     match db.read_ip_status(remote_addr.ip().to_string()).await {
         IpStatus::Trusted => proxy(cfg, req, payload, x_forwarded_for).await,
