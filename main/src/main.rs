@@ -24,6 +24,10 @@ mod sign;
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
 type GenericResult<T> = std::result::Result<T, GenericError>;
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[global_allocator]
+static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 #[tokio::main]
 async fn main() -> GenericResult<()> {
     let cfg = get_app_config();
