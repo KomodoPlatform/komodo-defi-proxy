@@ -21,12 +21,12 @@ mod rpc;
 #[path = "security/sign.rs"]
 mod sign;
 
-type GenericError = Box<dyn std::error::Error + Send + Sync>;
-type GenericResult<T> = std::result::Result<T, GenericError>;
-
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[global_allocator]
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
+type GenericError = Box<dyn std::error::Error + Send + Sync>;
+type GenericResult<T> = std::result::Result<T, GenericError>;
 
 #[tokio::main]
 async fn main() -> GenericResult<()> {
