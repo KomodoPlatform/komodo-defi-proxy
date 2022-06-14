@@ -1,6 +1,7 @@
 use super::*;
 use async_trait::async_trait;
 use bytes::Buf;
+use ctx::AppConfig;
 use db::Db;
 use hyper::{header, Body, Request, Response, StatusCode};
 use redis::FromRedisValue;
@@ -14,11 +15,14 @@ pub(crate) struct IpStatusPayload {
     pub(crate) status: i8,
 }
 
-pub(crate) async fn post_ip_status(req: Request<Body>) -> GenericResult<Response<Body>> {
+pub(crate) async fn post_ip_status(
+    req: Request<Body>,
+    cfg: &AppConfig,
+) -> GenericResult<Response<Body>> {
     let whole_body = hyper::body::aggregate(req).await?;
     let payload: Vec<IpStatusPayload> = serde_json::from_reader(whole_body.reader())?;
 
-    let mut db = Db::create_instance().await;
+    let mut db = Db::create_instance(cfg).await;
     db.bulk_insert_ip_status(payload).await?;
 
     Ok(Response::builder()
@@ -27,8 +31,8 @@ pub(crate) async fn post_ip_status(req: Request<Body>) -> GenericResult<Response
         .body(Body::from(Vec::new()))?)
 }
 
-pub(crate) async fn get_ip_status_list() -> GenericResult<Response<Body>> {
-    let mut db = Db::create_instance().await;
+pub(crate) async fn get_ip_status_list(cfg: &AppConfig) -> GenericResult<Response<Body>> {
+    let mut db = Db::create_instance(cfg).await;
     let list = db.read_ip_status_list().await;
 
     let list: Vec<IpStatusPayload> = list

@@ -60,9 +60,7 @@ impl AppConfig {
 
     pub(crate) fn get_rpc_client(&self, ticker: String) -> Option<RpcClient> {
         if let Some(node) = self.get_node(ticker) {
-            return Some(RpcClient {
-                url: node.url.clone(),
-            });
+            return Some(RpcClient::new(node.url.clone()));
         }
 
         None

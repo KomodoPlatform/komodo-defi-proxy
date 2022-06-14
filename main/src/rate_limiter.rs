@@ -1,6 +1,6 @@
 use super::*;
 use async_trait::async_trait;
-use ctx::get_app_config;
+use ctx::RateLimiter;
 use db::Db;
 use redis::Pipeline;
 
@@ -26,7 +26,11 @@ pub(crate) trait RateLimitOperations {
         ip: &str,
         rate_limit: u16,
     ) -> GenericResult<bool>;
-    async fn rate_exceeded(&mut self, ip: String) -> GenericResult<bool>;
+    async fn rate_exceeded(
+        &mut self,
+        ip: String,
+        rate_limiter_conf: &RateLimiter,
+    ) -> GenericResult<bool>;
 }
 
 #[async_trait]
@@ -86,9 +90,11 @@ impl RateLimitOperations for Db {
         Ok(false)
     }
 
-    async fn rate_exceeded(&mut self, ip: String) -> GenericResult<bool> {
-        let rate_limit_conf = &get_app_config().rate_limiter;
-
+    async fn rate_exceeded(
+        &mut self,
+        ip: String,
+        rate_limit_conf: &RateLimiter,
+    ) -> GenericResult<bool> {
         if self
             .did_exceed_in_single_time_frame(DB_RP_1_MIN, &ip, rate_limit_conf.rp_1_min)
             .await?

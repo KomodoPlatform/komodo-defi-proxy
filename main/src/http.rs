@@ -1,5 +1,5 @@
 use super::*;
-use ctx::{get_app_config, AppConfig, ProxyRoute};
+use ctx::{AppConfig, ProxyRoute};
 use db::*;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
@@ -10,10 +10,11 @@ use hyper::{
 use hyper_tls::HttpsConnector;
 use ip_status::{get_ip_status_list, post_ip_status, IpStatus, IpStatusOperations};
 use jwt::generate_jwt;
+use proof_of_funding::{verify_message_and_balance, ProofOfFundingError};
 use rate_limiter::RateLimitOperations;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sign::{SignOps, SignedMessage};
+use sign::SignedMessage;
 use std::net::SocketAddr;
 
 impl AppConfig {
@@ -57,17 +58,17 @@ async fn insert_jwt_to_http_header(headers: &mut HeaderMap<HeaderValue>) -> Gene
     Ok(())
 }
 
-async fn parse_payload(req: Request<Body>) -> GenericResult<(Request<Body>, QuickNodePayload)> {
+async fn parse_payload(req: Request<Body>) -> GenericResult<(Request<Body>, RpcPayload)> {
     let (parts, body) = req.into_parts();
     let body_bytes = hyper::body::to_bytes(body).await?;
 
-    let payload: QuickNodePayload = serde_json::from_slice(&body_bytes)?;
+    let payload: RpcPayload = serde_json::from_slice(&body_bytes)?;
 
     Ok((Request::from_parts(parts, Body::from(body_bytes)), payload))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct QuickNodePayload {
+pub(crate) struct RpcPayload {
     pub(crate) method: String,
     pub(crate) params: serde_json::value::Value,
     pub(crate) id: usize,
@@ -76,12 +77,12 @@ pub(crate) struct QuickNodePayload {
 }
 
 async fn proxy(
+    cfg: &AppConfig,
     mut req: Request<Body>,
-    payload: QuickNodePayload,
+    payload: RpcPayload,
     x_forwarded_for: HeaderValue,
 ) -> GenericResult<Response<Body>> {
-    let config = get_app_config();
-    let proxy_route = config.get_proxy_route_by_inbound(req.uri().to_string());
+    let proxy_route = cfg.get_proxy_route_by_inbound(req.uri().to_string());
 
     if let Some(proxy_route) = proxy_route {
         // check if requested method allowed
@@ -138,12 +139,16 @@ async fn proxy(
     response_by_status(StatusCode::NOT_FOUND)
 }
 
-async fn router(req: Request<Body>, remote_addr: SocketAddr) -> GenericResult<Response<Body>> {
+async fn router(
+    cfg: &AppConfig,
+    req: Request<Body>,
+    remote_addr: SocketAddr,
+) -> GenericResult<Response<Body>> {
     if !remote_addr.ip().is_global() {
         match (req.method(), req.uri().path()) {
             (&Method::GET, "/") => return get_healthcheck().await,
-            (&Method::GET, "/ip-status") => return post_ip_status(req).await,
-            (&Method::POST, "/ip-status") => return get_ip_status_list().await,
+            (&Method::GET, "/ip-status") => return post_ip_status(req, &cfg).await,
+            (&Method::POST, "/ip-status") => return get_ip_status_list(&cfg).await,
             _ => {}
         };
     };
@@ -163,16 +168,19 @@ async fn router(req: Request<Body>, remote_addr: SocketAddr) -> GenericResult<Re
     };
 
     if !remote_addr.ip().is_global() {
-        return proxy(req, payload, x_forwarded_for).await;
+        return proxy(cfg, req, payload, x_forwarded_for).await;
     }
 
-    let mut db = Db::create_instance().await;
+    let mut db = Db::create_instance(&cfg).await;
 
     match db.read_ip_status(remote_addr.ip().to_string()).await {
-        IpStatus::Trusted => proxy(req, payload, x_forwarded_for).await,
+        IpStatus::Trusted => proxy(cfg, req, payload, x_forwarded_for).await,
         IpStatus::Blocked => response_by_status(StatusCode::FORBIDDEN),
         _ => {
-            match db.rate_exceeded(remote_addr.ip().to_string()).await {
+            match db
+                .rate_exceeded(remote_addr.ip().to_string(), &cfg.rate_limiter)
+                .await
+            {
                 Ok(false) => {}
                 _ => {
                     return response_by_status(StatusCode::TOO_MANY_REQUESTS);
@@ -180,32 +188,29 @@ async fn router(req: Request<Body>, remote_addr: SocketAddr) -> GenericResult<Re
             }
 
             if db.rate_ip(remote_addr.ip().to_string()).await.is_err() {
-                // TODO
-                // log
+                // TODO::log
             };
 
-            // TODO
-            // wallet balance validation via app configurations
-            match payload.signed_message.verify_message() {
-                Ok(true) => {}
-                _ => {
-                    return response_by_status(StatusCode::UNAUTHORIZED);
+            match verify_message_and_balance(cfg, &payload).await {
+                Ok(_) => proxy(cfg, req, payload, x_forwarded_for).await,
+                Err(ProofOfFundingError::InvalidSignedMessage) => {
+                    response_by_status(StatusCode::UNAUTHORIZED)
                 }
+                Err(ProofOfFundingError::InsufficientBalance) => {
+                    response_by_status(StatusCode::NOT_ACCEPTABLE)
+                }
+                _ => response_by_status(StatusCode::INTERNAL_SERVER_ERROR),
             }
-
-            proxy(req, payload, x_forwarded_for).await
         }
     }
 }
 
-pub(crate) async fn serve() -> GenericResult<()> {
-    let config = get_app_config();
-
-    let addr = format!("0.0.0.0:{}", config.port.unwrap_or(5000)).parse()?;
+pub(crate) async fn serve(cfg: &'static AppConfig) -> GenericResult<()> {
+    let addr = format!("0.0.0.0:{}", cfg.port.unwrap_or(5000)).parse()?;
 
     let router = make_service_fn(move |c_stream: &AddrStream| {
         let remote_addr = c_stream.remote_addr();
-        async move { Ok::<_, GenericError>(service_fn(move |req| router(req, remote_addr))) }
+        async move { Ok::<_, GenericError>(service_fn(move |req| router(cfg, req, remote_addr))) }
     });
 
     let server = Server::bind(&addr).serve(router);
