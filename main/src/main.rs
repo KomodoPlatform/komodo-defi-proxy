@@ -30,6 +30,8 @@ type GenericResult<T> = std::result::Result<T, GenericError>;
 
 #[tokio::main]
 async fn main() -> GenericResult<()> {
+    simple_logger::SimpleLogger::new().env().init()?;
+
     let cfg = get_app_config();
     // to panic if redis is not available
     get_redis_connection(cfg).await;

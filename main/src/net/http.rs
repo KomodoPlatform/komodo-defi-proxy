@@ -17,6 +17,11 @@ use serde_json::json;
 use sign::SignedMessage;
 use std::net::SocketAddr;
 
+macro_rules! http_log_format {
+  ($ip: expr, $path: expr, $format: expr, $($args: tt)+) => {format!(concat!("[{} -> {}] ", $format), $ip, $path, $($args)+)};
+  ($ip: expr, $path: expr, $format: expr) => {format!(concat!("[{} -> {}] ", $format), $ip, $path)}
+}
+
 impl AppConfig {
     fn get_proxy_route_by_inbound(&self, inbound: String) -> Option<&ProxyRoute> {
         let route_index = self.proxy_routes.iter().position(|r| {
@@ -79,6 +84,7 @@ pub(crate) struct RpcPayload {
 async fn proxy(
     cfg: &AppConfig,
     mut req: Request<Body>,
+    remote_addr: &SocketAddr,
     payload: RpcPayload,
     x_forwarded_for: HeaderValue,
 ) -> GenericResult<Response<Body>> {
@@ -87,17 +93,44 @@ async fn proxy(
     if let Some(proxy_route) = proxy_route {
         // check if requested method allowed
         if !proxy_route.allowed_methods.contains(&payload.method) {
+            log::warn!(
+                "{}",
+                http_log_format!(
+                    remote_addr.ip(),
+                    req.uri(),
+                    "Method {} not allowed for, returning 403.",
+                    payload.method
+                )
+            );
             return response_by_status(StatusCode::FORBIDDEN);
         }
 
         // modify outgoing request
         if insert_jwt_to_http_header(req.headers_mut()).await.is_err() {
+            log::error!(
+                "{}",
+                http_log_format!(
+                    remote_addr.ip(),
+                    req.uri(),
+                    "Error inserting JWT into http header, returning 500."
+                )
+            );
             return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
         }
 
+        let original_req_uri = req.uri().clone();
         *req.uri_mut() = match proxy_route.outbound_route.parse() {
             Ok(uri) => uri,
             Err(_) => {
+                log::error!(
+                    "{}",
+                    http_log_format!(
+                        remote_addr.ip(),
+                        original_req_uri,
+                        "Error type casting value of {} into Uri, returning 500.",
+                        proxy_route.outbound_route
+                    )
+                );
                 return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
             }
         };
@@ -126,9 +159,19 @@ async fn proxy(
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build(https);
 
+        let target_uri = req.uri().clone();
         let res = match client.request(req).await {
             Ok(t) => t,
             Err(_) => {
+                log::warn!(
+                    "{}",
+                    http_log_format!(
+                        remote_addr.ip(),
+                        original_req_uri,
+                        "Couldn't reach {}, returning 503.",
+                        target_uri
+                    )
+                );
                 return response_by_status(StatusCode::SERVICE_UNAVAILABLE);
             }
         };
@@ -136,6 +179,14 @@ async fn proxy(
         return Ok(res);
     }
 
+    log::warn!(
+        "{}",
+        http_log_format!(
+            remote_addr.ip(),
+            req.uri(),
+            "Proxy route not found, returning 404."
+        )
+    );
     response_by_status(StatusCode::NOT_FOUND)
 }
 
@@ -144,7 +195,21 @@ async fn router(
     req: Request<Body>,
     remote_addr: SocketAddr,
 ) -> GenericResult<Response<Body>> {
+    log::info!(
+        "{}",
+        http_log_format!(remote_addr.ip(), req.uri(), "Request received.")
+    );
+
     if !remote_addr.ip().is_global() {
+        log::info!(
+            "{}",
+            http_log_format!(
+                remote_addr.ip(),
+                req.uri(),
+                "Incoming ip is in the same network. Security middlewares will be by-passed."
+            )
+        );
+
         match (req.method(), req.uri().path()) {
             (&Method::GET, "/") => return get_healthcheck().await,
             (&Method::GET, "/ip-status") => return post_ip_status(cfg, req).await,
@@ -153,9 +218,18 @@ async fn router(
         };
     };
 
+    let req_path = req.uri().clone();
     let (req, payload) = match parse_payload(req).await {
         Ok(t) => t,
         Err(_) => {
+            log::warn!(
+                "{}",
+                http_log_format!(
+                    remote_addr.ip(),
+                    req_path,
+                    "Recieved invalid http payload, returning 401."
+                )
+            );
             return response_by_status(StatusCode::UNAUTHORIZED);
         }
     };
@@ -163,19 +237,33 @@ async fn router(
     let x_forwarded_for: HeaderValue = match remote_addr.ip().to_string().parse() {
         Ok(t) => t,
         Err(_) => {
+            log::error!(
+                "{}",
+                http_log_format!(
+                    remote_addr.ip(),
+                    req_path,
+                    "Error type casting of IpAddr into HeaderValue, returning 500."
+                )
+            );
             return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
 
     if !remote_addr.ip().is_global() {
-        return proxy(cfg, req, payload, x_forwarded_for).await;
+        return proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await;
     }
 
     let mut db = Db::create_instance(cfg).await;
 
     match db.read_ip_status(remote_addr.ip().to_string()).await {
-        IpStatus::Trusted => proxy(cfg, req, payload, x_forwarded_for).await,
-        IpStatus::Blocked => response_by_status(StatusCode::FORBIDDEN),
+        IpStatus::Trusted => proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await,
+        IpStatus::Blocked => {
+            log::warn!(
+                "{}",
+                http_log_format!(remote_addr.ip(), req_path, "Request blocked.")
+            );
+            response_by_status(StatusCode::FORBIDDEN)
+        }
         _ => {
             match db
                 .rate_exceeded(remote_addr.ip().to_string(), &cfg.rate_limiter)
@@ -183,20 +271,44 @@ async fn router(
             {
                 Ok(false) => {}
                 _ => {
+                    log::warn!(
+                        "{}",
+                        http_log_format!(remote_addr.ip(), req_path, "Rate exceed, returning 429.")
+                    );
                     return response_by_status(StatusCode::TOO_MANY_REQUESTS);
                 }
             }
 
             if db.rate_ip(remote_addr.ip().to_string()).await.is_err() {
-                // TODO::log
+                log::error!(
+                    "{}",
+                    http_log_format!(remote_addr.ip(), req_path, "Rate incrementing failed.")
+                );
             };
 
             match verify_message_and_balance(cfg, &payload).await {
-                Ok(_) => proxy(cfg, req, payload, x_forwarded_for).await,
+                Ok(_) => proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await,
                 Err(ProofOfFundingError::InvalidSignedMessage) => {
+                    log::warn!(
+                        "{}",
+                        http_log_format!(
+                            remote_addr.ip(),
+                            req_path,
+                            "Request has invalid signed message, returning 401."
+                        )
+                    );
                     response_by_status(StatusCode::UNAUTHORIZED)
                 }
                 Err(ProofOfFundingError::InsufficientBalance) => {
+                    log::warn!(
+                        "{}",
+                        http_log_format!(
+                            remote_addr.ip(),
+                            req_path,
+                            "Wallet {} has insufficient balance, returning 406.",
+                            payload.signed_message.address
+                        )
+                    );
                     response_by_status(StatusCode::NOT_ACCEPTABLE)
                 }
                 _ => response_by_status(StatusCode::INTERNAL_SERVER_ERROR),
@@ -215,7 +327,7 @@ pub(crate) async fn serve(cfg: &'static AppConfig) -> GenericResult<()> {
 
     let server = Server::bind(&addr).serve(router);
 
-    println!("AtomicDEX Auth API serving on http://{}", addr);
+    log::info!("AtomicDEX Auth API serving on http://{}", addr);
 
     Ok(server.await?)
 }
