@@ -1,13 +1,11 @@
 use super::*;
 use bitcrypto::keccak256;
-use chrono::{DateTime, Utc};
 use core::{convert::From, str::FromStr};
 use ethereum_types::{Address, H256};
 use ethkey::{sign, verify_address, Secret, Signature};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
-
-const VALIDATION_DATE_FORMAT: &str = "%Y-%m-%d %H:%M:%S %z";
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) trait SignOps {
     fn sign_message_hash(&self) -> [u8; 32];
@@ -22,7 +20,7 @@ pub(crate) trait SignOps {
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct SignedMessage {
     pub(crate) address: String,
-    pub(crate) date_message: String,
+    pub(crate) timestamp_message: u64,
     pub(crate) signature: String,
 }
 
@@ -32,8 +30,8 @@ impl SignOps for SignedMessage {
             format!(
                 "{}{}{}",
                 "\x19aDEX Auth Ethereum Signed Message:\n",
-                self.date_message.len(),
-                self.date_message
+                self.timestamp_message.to_string().len(),
+                self.timestamp_message
             )
             .as_bytes(),
         )
@@ -98,10 +96,9 @@ impl SignOps for SignedMessage {
     }
 
     fn verify_message(&self) -> GenericResult<bool> {
-        let now = Utc::now();
-        let valid_until = DateTime::parse_from_str(&self.date_message, VALIDATION_DATE_FORMAT)?;
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
-        if now > valid_until {
+        if now > self.timestamp_message {
             return Ok(false);
         }
 
@@ -121,12 +118,15 @@ impl SignOps for SignedMessage {
 
 #[test]
 fn test_message_sign_and_verify() {
-    let date_message = Utc::now() + chrono::Duration::minutes(5);
-    let date_message = date_message.format(VALIDATION_DATE_FORMAT).to_string();
+    let timestamp_message = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 5 * 60;
 
     let mut signed_message = SignedMessage {
         address: String::from("0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29"),
-        date_message,
+        timestamp_message,
         signature: String::new(),
     };
 

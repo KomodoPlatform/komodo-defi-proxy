@@ -30,15 +30,6 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "base64"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b25d992356d2eb0ed82172f5248873db5560c4721f564b13cb5193bda5e668e"
-dependencies = [
- "byteorder",
-]
-
-[[package]]
-name = "base64"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
@@ -46,7 +37,7 @@ checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
 [[package]]
 name = "bitcrypto"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/atomicDEX-API?branch=dev#0f95b8d9604b65a07b1f8e497b0ca59c1494c1e4"
+source = "git+https://github.com/KomodoPlatform/atomicDEX-API?branch=dev#3be0c0449045ef0ffbf4f4dadb714368eb8fb74b"
 dependencies = [
  "groestl",
  "primitives",
@@ -109,19 +100,6 @@ name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
-
-[[package]]
-name = "chrono"
-version = "0.4.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "670ad68c9088c2a963aaa298cb369688cf3f9465ce5e2d4ca10e6e0098a1ce73"
-dependencies = [
- "libc",
- "num-integer",
- "num-traits",
- "time 0.1.44",
- "winapi",
-]
 
 [[package]]
 name = "cloudabi"
@@ -589,9 +567,9 @@ dependencies = [
 
 [[package]]
 name = "js-sys"
-version = "0.3.57"
+version = "0.3.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "671a26f820db17c2a2750743f1dd03bafd15b98c9f30c7c2628c024c05d73397"
+checksum = "c3fac17f7123a73ca62df411b1bf727ccc805daa070338fda671c86dac1bdc27"
 dependencies = [
  "wasm-bindgen",
 ]
@@ -602,7 +580,7 @@ version = "8.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc9051c17f81bae79440afa041b3a278e1de71bfb96d32454b477fd4703ccb6f"
 dependencies = [
- "base64 0.13.0",
+ "base64",
  "pem",
  "ring",
  "serde",
@@ -651,10 +629,8 @@ name = "main"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "base64 0.10.1",
  "bitcrypto",
  "bytes",
- "chrono",
  "ethereum-types",
  "ethkey",
  "futures-util",
@@ -664,7 +640,6 @@ dependencies = [
  "jemallocator",
  "jsonwebtoken",
  "once_cell",
- "primitives",
  "redis",
  "serde",
  "serde_json",
@@ -697,7 +672,7 @@ checksum = "713d550d9b44d89174e066b7a6217ae06234c10cb47819a88290d2b353c31799"
 dependencies = [
  "libc",
  "log 0.4.17",
- "wasi 0.11.0+wasi-snapshot-preview1",
+ "wasi",
  "windows-sys",
 ]
 
@@ -831,7 +806,7 @@ version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9a3b09a20e374558580a4914d3b7d89bd61b954a5a5e1dcbea98753addb1947"
 dependencies = [
- "base64 0.13.0",
+ "base64",
 ]
 
 [[package]]
@@ -861,7 +836,7 @@ checksum = "1df8c4ec4b0627e53bdf214615ad287367e482558cf84b109250b37464dc03ae"
 [[package]]
 name = "primitives"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/atomicDEX-API?branch=dev#0f95b8d9604b65a07b1f8e497b0ca59c1494c1e4"
+source = "git+https://github.com/KomodoPlatform/atomicDEX-API?branch=dev#3be0c0449045ef0ffbf4f4dadb714368eb8fb74b"
 dependencies = [
  "byteorder",
  "rustc-hex 2.1.0",
@@ -1028,7 +1003,6 @@ dependencies = [
  "itoa 0.4.8",
  "percent-encoding",
  "pin-project-lite",
- "sha1",
  "tokio",
  "tokio-util 0.6.10",
  "url",
@@ -1159,9 +1133,9 @@ dependencies = [
 
 [[package]]
 name = "semver"
-version = "1.0.9"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cb243bdfdb5936c8dc3c45762a19d12ab4550cdc753bc247637d4ec35a040fd"
+checksum = "a41d061efea015927ac527063765e73601444cdc344ba855bc7bd44578b25e1c"
 
 [[package]]
 name = "serde"
@@ -1197,7 +1171,7 @@ dependencies = [
 [[package]]
 name = "serialization"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/atomicDEX-API?branch=dev#0f95b8d9604b65a07b1f8e497b0ca59c1494c1e4"
+source = "git+https://github.com/KomodoPlatform/atomicDEX-API?branch=dev#3be0c0449045ef0ffbf4f4dadb714368eb8fb74b"
 dependencies = [
  "byteorder",
  "derive_more",
@@ -1217,21 +1191,6 @@ dependencies = [
  "digest",
  "opaque-debug",
 ]
-
-[[package]]
-name = "sha1"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1da05c97445caa12d05e848c4a4fcbbea29e748ac28f7e80e9b010392063770"
-dependencies = [
- "sha1_smol",
-]
-
-[[package]]
-name = "sha1_smol"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae1a47186c03a32177042e55dbc5fd5aee900b8e0069a8d70fba96a9375cd012"
 
 [[package]]
 name = "sha2"
@@ -1267,7 +1226,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "thiserror",
- "time 0.3.9",
+ "time",
 ]
 
 [[package]]
@@ -1332,7 +1291,7 @@ dependencies = [
 [[package]]
 name = "test_helpers"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/atomicDEX-API?branch=dev#0f95b8d9604b65a07b1f8e497b0ca59c1494c1e4"
+source = "git+https://github.com/KomodoPlatform/atomicDEX-API?branch=dev#3be0c0449045ef0ffbf4f4dadb714368eb8fb74b"
 dependencies = [
  "hex",
 ]
@@ -1355,17 +1314,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "time"
-version = "0.1.44"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6db9e6914ab8b1ae1c260a4ae7a49b6c5611b40328a735b21862567685e73255"
-dependencies = [
- "libc",
- "wasi 0.10.0+wasi-snapshot-preview1",
- "winapi",
 ]
 
 [[package]]
@@ -1485,9 +1433,9 @@ checksum = "360dfd1d6d30e05fda32ace2c8c70e9c0a9da713275777f5a4dbb8a1893930c6"
 
 [[package]]
 name = "tracing"
-version = "0.1.34"
+version = "0.1.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d0ecdcb44a79f0fe9844f0c4f33a342cbcbb5117de8001e6ba0dc2351327d09"
+checksum = "a400e31aa60b9d44a52a8ee0343b5b18566b03a8321e0d321f695cf56e940160"
 dependencies = [
  "cfg-if",
  "pin-project-lite",
@@ -1546,9 +1494,9 @@ checksum = "099b7128301d285f79ddd55b9a83d5e6b9e97c92e0ea0daebee7263e932de992"
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d22af068fba1eb5edcb4aea19d382b2a3deb4c8f9d475c589b6ada9e0fd493ee"
+checksum = "5bd2fe26506023ed7b5e1e315add59d6f584c621d037f9368fea9cfb988f368c"
 
 [[package]]
 name = "unicode-normalization"
@@ -1601,21 +1549,15 @@ dependencies = [
 
 [[package]]
 name = "wasi"
-version = "0.10.0+wasi-snapshot-preview1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a143597ca7c7793eff794def352d41792a93c481eb1042423ff7ff72ba2c31f"
-
-[[package]]
-name = "wasi"
 version = "0.11.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 
 [[package]]
 name = "wasm-bindgen"
-version = "0.2.80"
+version = "0.2.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27370197c907c55e3f1a9fbe26f44e937fe6451368324e009cba39e139dc08ad"
+checksum = "7c53b543413a17a202f4be280a7e5c62a1c69345f5de525ee64f8cfdbc954994"
 dependencies = [
  "cfg-if",
  "wasm-bindgen-macro",
@@ -1623,9 +1565,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-backend"
-version = "0.2.80"
+version = "0.2.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53e04185bfa3a779273da532f5025e33398409573f348985af9a1cbf3774d3f4"
+checksum = "5491a68ab4500fa6b4d726bd67408630c3dbe9c4fe7bda16d5c82a1fd8c7340a"
 dependencies = [
  "bumpalo",
  "lazy_static",
@@ -1638,9 +1580,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro"
-version = "0.2.80"
+version = "0.2.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17cae7ff784d7e83a2fe7611cfe766ecf034111b49deb850a3dc7699c08251f5"
+checksum = "c441e177922bc58f1e12c022624b6216378e5febc2f0533e41ba443d505b80aa"
 dependencies = [
  "quote",
  "wasm-bindgen-macro-support",
@@ -1648,9 +1590,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro-support"
-version = "0.2.80"
+version = "0.2.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99ec0dc7a4756fffc231aab1b9f2f578d23cd391390ab27f952ae0c9b3ece20b"
+checksum = "7d94ac45fcf608c1f45ef53e748d35660f168490c10b23704c7779ab8f5c3048"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1661,15 +1603,15 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-shared"
-version = "0.2.80"
+version = "0.2.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d554b7f530dee5964d9a9468d95c1f8b8acae4f282807e7d27d4b03099a46744"
+checksum = "6a89911bd99e5f3659ec4acf9c4d93b0a90fe4a2a11f15328472058edc5261be"
 
 [[package]]
 name = "web-sys"
-version = "0.3.57"
+version = "0.3.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b17e741662c70c8bd24ac5c5b18de314a2c26c32bf8346ee1e6f53de919c283"
+checksum = "2fed94beee57daf8dd7d51f2b15dc2bcde92d7a72304cdf662a4371008b71b90"
 dependencies = [
  "js-sys",
  "wasm-bindgen",

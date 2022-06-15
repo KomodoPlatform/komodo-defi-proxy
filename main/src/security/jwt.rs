@@ -1,30 +1,35 @@
 use super::*;
-use chrono::{Duration, Utc};
 use ctx::get_app_config;
 use jsonwebtoken::*;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use std::{fs::File, io::Read};
+use std::{
+    fs::File,
+    io::Read,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 const TOKEN_ISSUER: &str = "ATOMICDEX-AUTH";
 
 #[derive(Debug, Serialize, Deserialize)]
 struct JwtClaims {
-    iat: usize,
-    nbf: usize,
-    exp: usize,
+    iat: u64,
+    nbf: u64,
+    exp: u64,
     iss: String,
 }
 
 impl JwtClaims {
     fn new(expiration: i64) -> Self {
-        let current_time = Utc::now();
-        let current_ts = current_time.timestamp() as usize;
+        let current_ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         Self {
             iat: current_ts,
             nbf: current_ts,
-            exp: (current_time + Duration::seconds(expiration)).timestamp() as usize,
+            exp: current_ts + expiration as u64,
             iss: TOKEN_ISSUER.to_string(),
         }
     }
