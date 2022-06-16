@@ -154,6 +154,8 @@ async fn proxy(
 
         req.headers_mut()
             .insert(HeaderName::from_static("x-forwarded-for"), x_forwarded_for);
+        req.headers_mut()
+            .insert(header::CONTENT_TYPE, "application/json".parse()?);
 
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build(https);

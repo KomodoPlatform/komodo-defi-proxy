@@ -1,6 +1,6 @@
 use super::*;
 use bytes::Buf;
-use hyper::{body::aggregate, Body, Request};
+use hyper::{body::aggregate, header, Body, Request};
 use hyper_tls::HttpsConnector;
 use serde::{Deserialize, Serialize};
 use serde_json::from_reader;
@@ -17,11 +17,11 @@ impl RpcClient {
         RpcClient { url }
     }
 
-    pub(crate) async fn send(&self, method: &str, payload: Json) -> GenericResult<Json> {
-        let req = Request::builder()
-            .method(method)
-            .uri(&self.url)
-            .body(Body::from(payload.to_string()))?;
+    pub(crate) async fn send(&self, payload: Json) -> GenericResult<Json> {
+        let mut req = Request::post(&self.url).body(Body::from(payload.to_string()))?;
+        req.headers_mut()
+            .append(header::CONTENT_TYPE, "application/json".parse()?);
+
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build(https);
 
@@ -34,15 +34,21 @@ impl RpcClient {
 
 #[tokio::test]
 async fn test_send() {
-    let rpc_client = RpcClient::new(
-        String::from("https://gist.githubusercontent.com/ozkanonur/459b25a35cf3d2c689511fbc565c5ce6/raw/de130316fb12c0dd76685090b8472abbd58fd157/test.json")
-    );
+    let rpc_client = RpcClient::new(String::from("https://api.testnet.solana.com"));
 
-    let res = rpc_client.send("GET", serde_json::json!({})).await.unwrap();
+    let res = rpc_client
+        .send(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id":1,
+            "method":"getHealth"
+        }))
+        .await
+        .unwrap();
 
     let expected_res = serde_json::json!({
-        "key1": "value",
-        "key2": 6150,
+        "jsonrpc": "2.0",
+        "result": "ok",
+        "id": 1
     });
 
     assert_eq!(res, expected_res);
