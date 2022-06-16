@@ -34,7 +34,7 @@ impl RpcClient {
 
 #[tokio::test]
 async fn test_send() {
-    let rpc_client = RpcClient::new(String::from("https://api.testnet.solana.com"));
+    let rpc_client = RpcClient::new(String::from("https://api.mainnet-beta.solana.com"));
 
     let res = rpc_client
         .send(serde_json::json!({
