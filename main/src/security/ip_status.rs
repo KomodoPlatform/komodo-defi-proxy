@@ -123,3 +123,25 @@ impl IpStatusOperations for Db {
             .unwrap_or_default()
     }
 }
+
+#[test]
+fn test_if_ip_status_values_same_as_before() {
+    assert_eq!(IpStatus::None, IpStatus::from_i8(-1));
+    assert_eq!(IpStatus::Trusted, IpStatus::from_i8(0));
+    assert_eq!(IpStatus::Blocked, IpStatus::from_i8(1));
+}
+
+#[test]
+fn test_from_redis_value() {
+    let redis_val = redis::Value::Int(-1);
+    let val: IpStatus = redis::from_redis_value(&redis_val).unwrap();
+    assert_eq!(val, IpStatus::None);
+
+    let redis_val = redis::Value::Int(0);
+    let val: IpStatus = redis::from_redis_value(&redis_val).unwrap();
+    assert_eq!(val, IpStatus::Trusted);
+
+    let redis_val = redis::Value::Int(1);
+    let val: IpStatus = redis::from_redis_value(&redis_val).unwrap();
+    assert_eq!(val, IpStatus::Blocked);
+}

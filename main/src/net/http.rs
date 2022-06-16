@@ -10,7 +10,7 @@ use hyper::{
 };
 use hyper_tls::HttpsConnector;
 use ip_status::{get_ip_status_list, post_ip_status, IpStatus, IpStatusOperations};
-use jwt::generate_jwt;
+use jwt::{generate_jwt, JwtClaims};
 use proof_of_funding::{verify_message_and_balance, ProofOfFundingError};
 use rate_limiter::RateLimitOperations;
 use serde::{Deserialize, Serialize};
@@ -54,8 +54,12 @@ pub(crate) fn response_by_status(status: StatusCode) -> GenericResult<Response<B
         .body(Body::from(Vec::new()))?)
 }
 
-async fn insert_jwt_to_http_header(headers: &mut HeaderMap<HeaderValue>) -> GenericResult<()> {
-    let auth_token = generate_jwt().await?;
+async fn insert_jwt_to_http_header(
+    cfg: &AppConfig,
+    headers: &mut HeaderMap<HeaderValue>,
+) -> GenericResult<()> {
+    let claims = &JwtClaims::new(cfg.token_expiration_time.unwrap_or(3600));
+    let auth_token = generate_jwt(cfg, claims).await?;
     headers.insert(
         header::AUTHORIZATION,
         format!("Bearer {}", auth_token).parse()?,
@@ -107,7 +111,10 @@ async fn proxy(
         }
 
         // modify outgoing request
-        if insert_jwt_to_http_header(req.headers_mut()).await.is_err() {
+        if insert_jwt_to_http_header(cfg, req.headers_mut())
+            .await
+            .is_err()
+        {
             log::error!(
                 "{}",
                 http_log_format!(

@@ -1,5 +1,5 @@
 use super::*;
-use ctx::get_app_config;
+use ctx::AppConfig;
 use jsonwebtoken::*;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ use std::{
 const TOKEN_ISSUER: &str = "ATOMICDEX-AUTH";
 
 #[derive(Debug, Serialize, Deserialize)]
-struct JwtClaims {
+pub(crate) struct JwtClaims {
     iat: u64,
     nbf: u64,
     exp: u64,
@@ -20,7 +20,7 @@ struct JwtClaims {
 }
 
 impl JwtClaims {
-    fn new(expiration: i64) -> Self {
+    pub(crate) fn new(expiration: i64) -> Self {
         let current_ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -37,23 +37,21 @@ impl JwtClaims {
 
 static AUTH_DECODING_KEY: OnceCell<DecodingKey> = OnceCell::new();
 #[allow(dead_code)]
-pub(crate) fn get_decoding_key() -> &'static DecodingKey {
-    let config = get_app_config();
+pub(crate) fn get_decoding_key(cfg: &AppConfig) -> &'static DecodingKey {
+    let buffer_closure = || -> Vec<u8> { read_file_buffer(&cfg.pubkey_path) };
 
-    let buffer = read_file_buffer(&config.pubkey_path);
-
-    AUTH_DECODING_KEY
-        .get_or_init(|| DecodingKey::from_rsa_pem(&buffer).expect("Error decoding public key"))
+    AUTH_DECODING_KEY.get_or_init(|| {
+        DecodingKey::from_rsa_pem(&buffer_closure()).expect("Error decoding public key")
+    })
 }
 
 static AUTH_ENCODING_KEY: OnceCell<EncodingKey> = OnceCell::new();
-pub(crate) fn get_encoding_key() -> &'static EncodingKey {
-    let config = get_app_config();
+pub(crate) fn get_encoding_key(cfg: &AppConfig) -> &'static EncodingKey {
+    let buffer_closure = || -> Vec<u8> { read_file_buffer(&cfg.privkey_path) };
 
-    let buffer = read_file_buffer(&config.privkey_path);
-
-    AUTH_ENCODING_KEY
-        .get_or_init(|| EncodingKey::from_rsa_pem(&buffer).expect("Error encoding private key"))
+    AUTH_ENCODING_KEY.get_or_init(|| {
+        EncodingKey::from_rsa_pem(&buffer_closure()).expect("Error encoding private key")
+    })
 }
 
 fn read_file_buffer(path: &str) -> Vec<u8> {
@@ -65,27 +63,73 @@ fn read_file_buffer(path: &str) -> Vec<u8> {
     buffer
 }
 
-pub(crate) async fn generate_jwt() -> GenericResult<String> {
-    let config = get_app_config();
-
+pub(crate) async fn generate_jwt(cfg: &AppConfig, claims: &JwtClaims) -> GenericResult<String> {
     Ok(encode(
         &Header::new(Algorithm::RS256),
-        &JwtClaims::new(config.token_expiration_time.unwrap_or(3600)),
-        get_encoding_key(),
+        claims,
+        get_encoding_key(cfg),
     )?)
 }
 
 #[allow(dead_code)]
-async fn validate_jwt(token: String) -> bool {
+async fn validate_jwt(cfg: &AppConfig, token: String) -> bool {
     let mut validation = Validation::new(Algorithm::RS256);
     validation.set_issuer(&[TOKEN_ISSUER]);
     validation.validate_exp = true;
     validation.validate_nbf = true;
     validation.leeway = 0;
 
-    if decode::<JwtClaims>(&token, get_decoding_key(), &validation).is_err() {
+    if decode::<JwtClaims>(&token, get_decoding_key(cfg), &validation).is_err() {
         return false;
     }
 
     true
+}
+
+#[tokio::test]
+async fn test_read_file_buffer() {
+    let bytes = read_file_buffer("../assets/.io_test");
+    assert_eq!(
+        bytes,
+        [
+            97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97,
+            97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97,
+            10, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97,
+            115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115,
+            115, 115, 115, 115, 10, 10, 10, 32, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50,
+            50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 10, 10, 10, 9, 9, 9, 10, 10,
+            10, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100,
+            100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 10
+        ]
+    );
+}
+
+#[tokio::test]
+async fn test_generate_jwt() {
+    let mut cfg = ctx::get_app_config_test_instance();
+    cfg.privkey_path = String::from("../assets/.privkey_test");
+    cfg.pubkey_path = String::from("../assets/.pubkey_test");
+
+    let buffer = read_file_buffer(&cfg.privkey_path);
+    AUTH_ENCODING_KEY.get_or_init(|| EncodingKey::from_rsa_pem(&buffer).unwrap());
+
+    let buffer = read_file_buffer(&cfg.pubkey_path);
+    AUTH_DECODING_KEY.get_or_init(|| DecodingKey::from_rsa_pem(&buffer).unwrap());
+
+    // Test if generate_jwt works as expected
+    let claims = JwtClaims {
+        iat: u64::default(),
+        nbf: u64::default(),
+        exp: cfg.token_expiration_time.unwrap() as u64,
+        iss: String::from(TOKEN_ISSUER),
+    };
+
+    let token = generate_jwt(&cfg, &claims).await.unwrap();
+    let expected_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJpYXQiOjAsIm5iZiI6MCwiZXhwIjozMDAsImlzcyI6IkFUT01JQ0RFWC1BVVRIIn0.Ro-wPvS0U5F5IlgyaY1-R9mgPQWLInSrVGXyKBULVvfzshib2ENef3GJRDYdp8raSs4y4y3FMbuv1bz7si08ayfOo1UgLNR1JqN831yMJdHzvSXIl7Ej-hykRDndobXxzWxjavdCNxu9zVWFvnHn5FFMj42PYjIZ34CXuMelQE99TnlfJYxPzelywRzwp_OKPQoadRgYjQJyCcACiueVm1n0CkT_SzxDfkKmQNc6J_IqAZvkBqL5g1qMSbz9o0YmTIkVI-_izP9v92Zir9Qrmdm9RN8QoGTgs7CXjUkUVs5I1OuqjvIHsSPA4Wu5cxMmWmf63Rgingw6CKni4VELBA";
+    assert_eq!(token, expected_token);
+
+    // Test if validate_jwt works as expected
+    let claims = JwtClaims::new(cfg.token_expiration_time.unwrap());
+    let token = generate_jwt(&cfg, &claims).await.unwrap();
+    assert!(validate_jwt(&cfg, String::from(token)).await);
 }
