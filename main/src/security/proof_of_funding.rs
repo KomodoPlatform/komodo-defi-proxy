@@ -26,7 +26,7 @@ pub(crate) async fn verify_message_and_balance(
                 "params": [payload.signed_message.address, "latest"]
             });
 
-            match rpc_client.send(rpc_payload).await {
+            match rpc_client.send("POST", rpc_payload).await {
                 Ok(res) if res["result"] != Json::Null && res["result"] != "0x0" => return Ok(()),
                 Ok(res) if res["error"] != Json::Null => {
                     return Err(ProofOfFundingError::ErrorFromRpcCall);

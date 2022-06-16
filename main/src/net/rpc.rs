@@ -17,8 +17,11 @@ impl RpcClient {
         RpcClient { url }
     }
 
-    pub(crate) async fn send(&self, payload: Json) -> GenericResult<Json> {
-        let req = Request::post(&self.url).body(Body::from(payload.to_string()))?;
+    pub(crate) async fn send(&self, method: &str, payload: Json) -> GenericResult<Json> {
+        let req = Request::builder()
+            .method(method)
+            .uri(&self.url)
+            .body(Body::from(payload.to_string()))?;
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build(https);
 
@@ -27,4 +30,20 @@ impl RpcClient {
 
         Ok(from_reader(Buf::reader(body))?)
     }
+}
+
+#[tokio::test]
+async fn test_send() {
+    let rpc_client = RpcClient::new(
+        String::from("https://gist.githubusercontent.com/ozkanonur/459b25a35cf3d2c689511fbc565c5ce6/raw/de130316fb12c0dd76685090b8472abbd58fd157/test.json")
+    );
+
+    let res = rpc_client.send("GET", serde_json::json!({})).await.unwrap();
+
+    let expected_res = serde_json::json!({
+        "key1": "value",
+        "key2": 6150,
+    });
+
+    assert_eq!(res, expected_res);
 }

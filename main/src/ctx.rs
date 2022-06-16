@@ -66,3 +66,67 @@ impl AppConfig {
         None
     }
 }
+
+#[cfg(test)]
+pub(crate) fn get_app_config_test_instance() -> AppConfig {
+    AppConfig {
+        port: Some(5000),
+        redis_connection_string: String::from("dummy-value"),
+        pubkey_path: String::from("dummy-value"),
+        privkey_path: String::from("dummy-value"),
+        token_expiration_time: Some(300),
+        proxy_routes: Vec::from([
+            ProxyRoute {
+                inbound_route: String::from("/test"),
+                outbound_route: String::from("https://komodoplatform.com"),
+                allowed_methods: Vec::default(),
+            },
+            ProxyRoute {
+                inbound_route: String::from("/test-2"),
+                outbound_route: String::from("https://atomicdex.io"),
+                allowed_methods: Vec::default(),
+            },
+        ]),
+        rate_limiter: ctx::RateLimiter {
+            rp_1_min: 555,
+            rp_5_min: 555,
+            rp_15_min: 555,
+            rp_30_min: 555,
+            rp_60_min: 555,
+        },
+        nodes: Vec::from([
+            ctx::Node {
+                name: String::from("ETH"),
+                url: String::from("https://dummy-address"),
+            },
+            ctx::Node {
+                name: String::from("KMD"),
+                url: String::from("https://dummy-address2"),
+            },
+        ]),
+    }
+}
+
+#[test]
+fn test_get_node() {
+    let cfg = get_app_config_test_instance();
+
+    let node = cfg.get_node(String::from("ETH")).unwrap();
+    assert_eq!(node.name, "ETH");
+    assert_eq!(node.url, "https://dummy-address");
+
+    let node = cfg.get_node(String::from("KMD")).unwrap();
+    assert_eq!(node.name, "KMD");
+    assert_eq!(node.url, "https://dummy-address2");
+}
+
+#[test]
+fn test_get_rpc_client() {
+    let cfg = get_app_config_test_instance();
+
+    let rpc_client = cfg.get_rpc_client(String::from("ETH")).unwrap();
+    assert_eq!(rpc_client.url, "https://dummy-address");
+
+    let rpc_client = cfg.get_rpc_client(String::from("KMD")).unwrap();
+    assert_eq!(rpc_client.url, "https://dummy-address2");
+}

@@ -17,8 +17,9 @@ pub(crate) trait SignOps {
     fn verify_message(&self) -> GenericResult<bool>;
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct SignedMessage {
+    pub(crate) coin_ticker: String,
     pub(crate) address: String,
     pub(crate) timestamp_message: u64,
     pub(crate) signature: String,
@@ -30,8 +31,8 @@ impl SignOps for SignedMessage {
             format!(
                 "{}{}{}",
                 "\x19aDEX Auth Ethereum Signed Message:\n",
-                self.timestamp_message.to_string().len(),
-                self.timestamp_message
+                self.coin_ticker.len() + 1 + self.timestamp_message.to_string().len(),
+                format!("{}-{}", self.coin_ticker, self.timestamp_message)
             )
             .as_bytes(),
         )
@@ -117,17 +118,37 @@ impl SignOps for SignedMessage {
 }
 
 #[test]
+fn test_is_valid_checksum_addr() {
+    let mut signed_message = SignedMessage {
+        address: String::from("0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"),
+        timestamp_message: u64::default(),
+        signature: String::new(),
+        coin_ticker: String::from("ETH"),
+    };
+    assert!(signed_message.is_valid_checksum_addr());
+
+    signed_message.address = String::from("0x52908400098527886E0F7030069857D2E4169EE7");
+    assert!(signed_message.is_valid_checksum_addr());
+
+    signed_message.address = String::from("0x8617e340B3D01FA5F11F306F4090FD50E238070D");
+    assert!(!signed_message.is_valid_checksum_addr());
+
+    signed_message.address = String::from("0xd1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb");
+    assert!(!signed_message.is_valid_checksum_addr());
+}
+
+#[test]
 fn test_message_sign_and_verify() {
     let timestamp_message = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_secs()
-        + 5 * 60;
+        .as_secs();
 
     let mut signed_message = SignedMessage {
         address: String::from("0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29"),
-        timestamp_message,
+        timestamp_message: timestamp_message - 5 * 60,
         signature: String::new(),
+        coin_ticker: String::from("ETH"),
     };
 
     let key_pair = ethkey::KeyPair::from_secret_slice(
@@ -136,6 +157,9 @@ fn test_message_sign_and_verify() {
     .unwrap();
 
     signed_message.sign_message(&key_pair.secret()).unwrap();
+    assert!(!signed_message.verify_message().unwrap());
 
-    assert_eq!(signed_message.verify_message().unwrap(), true);
+    signed_message.timestamp_message = timestamp_message + 5 * 60;
+    signed_message.sign_message(&key_pair.secret()).unwrap();
+    assert!(signed_message.verify_message().unwrap());
 }
