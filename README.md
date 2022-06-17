@@ -18,7 +18,7 @@ Create the configuration file for app runtime.
 	"pubkey_path": "/path_to_publick_key.pem",
 	"privkey_path": "/path_to_private_key.pem",
 	"redis_connection_string": "redis://localhost",
-    "token_expiration_time": 300,
+	"token_expiration_time": 300,
 	"proxy_routes": [
 		{
 			"inbound_route": "/dev",
@@ -39,7 +39,8 @@ Create the configuration file for app runtime.
 	"nodes": [
 		{
 			"name": "ETH",
-			"url": "https://xyz.com/096ed97e0b1342b4b33"
+			"url": "https://xyz.com/096ed97e0b1342b4b33",
+			"authorized": false
 		}
 	]
 }
