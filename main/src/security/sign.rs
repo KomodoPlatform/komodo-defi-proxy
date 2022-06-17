@@ -120,6 +120,33 @@ impl SignOps for SignedMessage {
 }
 
 #[test]
+fn test_signed_message_serialzation_and_deserialization() {
+    let json_signed_message = serde_json::json!({
+        "address": "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+        "timestamp_message": 0,
+        "signature": "",
+        "coin_ticker": "ETH"
+    });
+
+    let actual_signed_message: SignedMessage =
+        serde_json::from_str(&json_signed_message.to_string()).unwrap();
+
+    let expected_signed_message = SignedMessage {
+        address: String::from("0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"),
+        timestamp_message: u64::default(),
+        signature: String::new(),
+        coin_ticker: String::from("ETH"),
+    };
+
+    assert_eq!(actual_signed_message, expected_signed_message);
+
+    // Backwards
+    let json = serde_json::to_value(expected_signed_message).unwrap();
+    assert_eq!(json_signed_message, json);
+    assert_eq!(json_signed_message.to_string(), json.to_string());
+}
+
+#[test]
 fn test_sign_message_hash() {
     let mut signed_message = SignedMessage {
         address: String::from("0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"),

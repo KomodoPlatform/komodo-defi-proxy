@@ -11,7 +11,7 @@ use std::{
 
 const TOKEN_ISSUER: &str = "ATOMICDEX-AUTH";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct JwtClaims {
     iat: u64,
     nbf: u64,
@@ -84,6 +84,37 @@ async fn validate_jwt(cfg: &AppConfig, token: String) -> bool {
     }
 
     true
+}
+
+#[test]
+fn test_jwt_constants() {
+    assert_eq!(TOKEN_ISSUER, "ATOMICDEX-AUTH");
+}
+
+#[test]
+fn test_jwt_claims_serialzation_and_deserialization() {
+    let json_jwt_claims = serde_json::json!({
+        "iat": 0,
+        "nbf": 0,
+        "exp": 0,
+        "iss": TOKEN_ISSUER.to_string()
+    });
+
+    let actual_jwt_claims: JwtClaims = serde_json::from_str(&json_jwt_claims.to_string()).unwrap();
+
+    let expected_jwt_claims = JwtClaims {
+        iat: 0,
+        nbf: 0,
+        exp: 0,
+        iss: TOKEN_ISSUER.to_string(),
+    };
+
+    assert_eq!(actual_jwt_claims, expected_jwt_claims);
+
+    // Backwards
+    let json = serde_json::to_value(expected_jwt_claims).unwrap();
+    assert_eq!(json_jwt_claims, json);
+    assert_eq!(json_jwt_claims.to_string(), json.to_string());
 }
 
 #[tokio::test]

@@ -2,12 +2,11 @@ use super::*;
 use bytes::Buf;
 use hyper::{body::aggregate, header, Body, Request};
 use hyper_tls::HttpsConnector;
-use serde::{Deserialize, Serialize};
 use serde_json::from_reader;
 
 pub(crate) type Json = serde_json::Value;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct RpcClient {
     pub(crate) url: String,
 }
@@ -30,6 +29,16 @@ impl RpcClient {
 
         Ok(from_reader(Buf::reader(body))?)
     }
+}
+
+#[test]
+fn test_new() {
+    let actual = RpcClient::new(String::from("dummy-value"));
+    let expected = RpcClient {
+        url: String::from("dummy-value"),
+    };
+
+    assert_eq!(actual, expected);
 }
 
 #[tokio::test]

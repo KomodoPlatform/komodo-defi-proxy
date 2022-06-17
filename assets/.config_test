@@ -1,0 +1,36 @@
+{
+	"port": 5000,
+	"redis_connection_string": "dummy-value",
+	"pubkey_path": "dummy-value",
+	"privkey_path": "dummy-value",
+	"token_expiration_time": 300,
+	"proxy_routes": [
+		{
+			"inbound_route": "/test",
+			"outbound_route": "https://komodoplatform.com",
+			"allowed_methods": []
+		},
+		{
+			"inbound_route": "/test-2",
+			"outbound_route": "https://atomicdex.io",
+			"allowed_methods": []
+		}
+	],
+	"rate_limiter": {
+		"rp_1_min": 555,
+		"rp_5_min": 555,
+		"rp_15_min": 555,
+		"rp_30_min": 555,
+		"rp_60_min": 555
+	},
+	"nodes": [
+		{
+			"name": "ETH",
+			"url": "https://dummy-address"
+		},
+		{
+			"name": "KMD",
+			"url": "https://dummy-address2"
+		}
+	]
+}

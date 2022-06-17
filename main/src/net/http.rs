@@ -341,6 +341,44 @@ pub(crate) async fn serve(cfg: &'static AppConfig) -> GenericResult<()> {
 }
 
 #[test]
+fn test_rpc_payload_serialzation_and_deserialization() {
+    let json_payload = json!({
+        "method": "dummy-value",
+        "params": [],
+        "id": 1,
+        "jsonrpc": "2.0",
+        "signed_message": {
+            "coin_ticker": "ETH",
+            "address": "dummy-value",
+            "timestamp_message": 1655319963,
+            "signature": "dummy-value",
+         }
+    });
+
+    let actual_payload: RpcPayload = serde_json::from_str(&json_payload.to_string()).unwrap();
+
+    let expected_payload = RpcPayload {
+        method: String::from("dummy-value"),
+        params: json!([]),
+        id: 1,
+        jsonrpc: String::from("2.0"),
+        signed_message: SignedMessage {
+            coin_ticker: String::from("ETH"),
+            address: String::from("dummy-value"),
+            timestamp_message: 1655319963,
+            signature: String::from("dummy-value"),
+        },
+    };
+
+    assert_eq!(actual_payload, expected_payload);
+
+    // Backwards
+    let json = serde_json::to_value(expected_payload).unwrap();
+    assert_eq!(json_payload, json);
+    assert_eq!(json_payload.to_string(), json.to_string());
+}
+
+#[test]
 fn test_get_proxy_route_by_inbound() {
     let cfg = ctx::get_app_config_test_instance();
 
@@ -386,9 +424,10 @@ async fn test_parse_payload() {
             "timestamp_message": 1655319963,
             "signature": "dummy-value",
          }
-    });
+    })
+    .to_string();
 
-    let mut req = Request::new(Body::from(serialized_payload.to_string()));
+    let mut req = Request::new(Body::from(serialized_payload));
     req.headers_mut().insert(
         HeaderName::from_static("dummy-header"),
         "dummy-value".parse().unwrap(),
