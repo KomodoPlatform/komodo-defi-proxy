@@ -54,7 +54,7 @@ pub(crate) fn response_by_status(status: StatusCode) -> GenericResult<Response<B
         .body(Body::from(Vec::new()))?)
 }
 
-async fn insert_jwt_to_http_header(
+pub(crate) async fn insert_jwt_to_http_header(
     cfg: &AppConfig,
     headers: &mut HeaderMap<HeaderValue>,
 ) -> GenericResult<()> {
@@ -220,8 +220,8 @@ async fn router(
 
         match (req.method(), req.uri().path()) {
             (&Method::GET, "/") => return get_healthcheck().await,
-            (&Method::GET, "/ip-status") => return post_ip_status(cfg, req).await,
-            (&Method::POST, "/ip-status") => return get_ip_status_list(cfg).await,
+            (&Method::GET, "/ip-status") => return get_ip_status_list(cfg).await,
+            (&Method::POST, "/ip-status") => return post_ip_status(cfg, req).await,
             _ => {}
         };
     };

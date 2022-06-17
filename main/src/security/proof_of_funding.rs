@@ -5,6 +5,7 @@ use rpc::Json;
 use serde_json::json;
 use sign::SignOps;
 
+#[derive(Debug)]
 pub(crate) enum ProofOfFundingError {
     InvalidSignedMessage,
     RpcClientNotFound,
@@ -18,7 +19,7 @@ pub(crate) async fn verify_message_and_balance(
     payload: &RpcPayload,
 ) -> Result<(), ProofOfFundingError> {
     if let Ok(true) = payload.signed_message.verify_message() {
-        if let Some(rpc_client) = cfg.get_rpc_client(String::from("ETH")) {
+        if let Some(node) = cfg.get_node(String::from("ETH")) {
             let rpc_payload = json!({
                 "id": 1,
                 "jsonrpc": "2.0",
@@ -26,7 +27,9 @@ pub(crate) async fn verify_message_and_balance(
                 "params": [payload.signed_message.address, "latest"]
             });
 
-            match rpc_client.send(rpc_payload).await {
+            let rpc_client = rpc::RpcClient::new(node.url.clone());
+
+            match rpc_client.send(cfg, rpc_payload, node.authorized).await {
                 Ok(res) if res["result"] != Json::Null && res["result"] != "0x0" => return Ok(()),
                 Ok(res) if res["error"] != Json::Null => {
                     return Err(ProofOfFundingError::ErrorFromRpcCall);

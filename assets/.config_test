@@ -26,11 +26,13 @@
 	"nodes": [
 		{
 			"name": "ETH",
-			"url": "https://dummy-address"
+			"url": "https://dummy-address",
+			"authorized": false
 		},
 		{
 			"name": "KMD",
-			"url": "https://dummy-address2"
+			"url": "https://dummy-address2",
+			"authorized": false
 		}
 	]
 }

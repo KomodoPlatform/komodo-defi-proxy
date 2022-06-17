@@ -1,6 +1,5 @@
 use super::*;
 use once_cell::sync::OnceCell;
-use rpc::RpcClient;
 use serde::{Deserialize, Serialize};
 use std::env;
 
@@ -44,6 +43,7 @@ pub(crate) struct RateLimiter {
 pub(crate) struct Node {
     pub(crate) name: String,
     pub(crate) url: String,
+    pub(crate) authorized: bool,
 }
 
 impl AppConfig {
@@ -56,14 +56,6 @@ impl AppConfig {
 
     pub(crate) fn get_node(&self, ticker: String) -> Option<&Node> {
         (&self.nodes).iter().find(|node| node.name == ticker)
-    }
-
-    pub(crate) fn get_rpc_client(&self, ticker: String) -> Option<RpcClient> {
-        if let Some(node) = self.get_node(ticker) {
-            return Some(RpcClient::new(node.url.clone()));
-        }
-
-        None
     }
 }
 
@@ -98,10 +90,12 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
             ctx::Node {
                 name: String::from("ETH"),
                 url: String::from("https://dummy-address"),
+                authorized: false,
             },
             ctx::Node {
                 name: String::from("KMD"),
                 url: String::from("https://dummy-address2"),
+                authorized: false,
             },
         ]),
     }
@@ -137,11 +131,13 @@ fn test_app_config_serialzation_and_deserialization() {
         "nodes": [
             {
                 "name": "ETH",
-                "url": "https://dummy-address"
+                "url": "https://dummy-address",
+                "authorized": false,
             },
             {
                 "name": "KMD",
-                "url": "https://dummy-address2"
+                "url": "https://dummy-address2",
+                "authorized": false,
             }
         ]
     });
@@ -177,15 +173,4 @@ fn test_get_node() {
     let node = cfg.get_node(String::from("KMD")).unwrap();
     assert_eq!(node.name, "KMD");
     assert_eq!(node.url, "https://dummy-address2");
-}
-
-#[test]
-fn test_get_rpc_client() {
-    let cfg = get_app_config_test_instance();
-
-    let rpc_client = cfg.get_rpc_client(String::from("ETH")).unwrap();
-    assert_eq!(rpc_client.url, "https://dummy-address");
-
-    let rpc_client = cfg.get_rpc_client(String::from("KMD")).unwrap();
-    assert_eq!(rpc_client.url, "https://dummy-address2");
 }
