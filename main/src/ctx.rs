@@ -1,6 +1,5 @@
 use super::*;
 use once_cell::sync::OnceCell;
-use rpc::RpcClient;
 use serde::{Deserialize, Serialize};
 use std::env;
 
@@ -12,7 +11,7 @@ pub(crate) fn get_app_config() -> &'static AppConfig {
     })
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct AppConfig {
     pub(crate) port: Option<u16>,
     pub(crate) redis_connection_string: String,
@@ -24,14 +23,14 @@ pub(crate) struct AppConfig {
     pub(crate) nodes: Vec<Node>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct ProxyRoute {
     pub(crate) inbound_route: String,
     pub(crate) outbound_route: String,
     pub(crate) allowed_methods: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct RateLimiter {
     pub(crate) rp_1_min: u16,
     pub(crate) rp_5_min: u16,
@@ -40,10 +39,11 @@ pub(crate) struct RateLimiter {
     pub(crate) rp_60_min: u16,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Node {
     pub(crate) name: String,
     pub(crate) url: String,
+    pub(crate) authorized: bool,
 }
 
 impl AppConfig {
@@ -57,12 +57,120 @@ impl AppConfig {
     pub(crate) fn get_node(&self, ticker: String) -> Option<&Node> {
         (&self.nodes).iter().find(|node| node.name == ticker)
     }
+}
 
-    pub(crate) fn get_rpc_client(&self, ticker: String) -> Option<RpcClient> {
-        if let Some(node) = self.get_node(ticker) {
-            return Some(RpcClient::new(node.url.clone()));
-        }
-
-        None
+#[cfg(test)]
+pub(crate) fn get_app_config_test_instance() -> AppConfig {
+    AppConfig {
+        port: Some(5000),
+        redis_connection_string: String::from("dummy-value"),
+        pubkey_path: String::from("dummy-value"),
+        privkey_path: String::from("dummy-value"),
+        token_expiration_time: Some(300),
+        proxy_routes: Vec::from([
+            ProxyRoute {
+                inbound_route: String::from("/test"),
+                outbound_route: String::from("https://komodoplatform.com"),
+                allowed_methods: Vec::default(),
+            },
+            ProxyRoute {
+                inbound_route: String::from("/test-2"),
+                outbound_route: String::from("https://atomicdex.io"),
+                allowed_methods: Vec::default(),
+            },
+        ]),
+        rate_limiter: ctx::RateLimiter {
+            rp_1_min: 555,
+            rp_5_min: 555,
+            rp_15_min: 555,
+            rp_30_min: 555,
+            rp_60_min: 555,
+        },
+        nodes: Vec::from([
+            ctx::Node {
+                name: String::from("ETH"),
+                url: String::from("https://dummy-address"),
+                authorized: false,
+            },
+            ctx::Node {
+                name: String::from("KMD"),
+                url: String::from("https://dummy-address2"),
+                authorized: false,
+            },
+        ]),
     }
+}
+
+#[test]
+fn test_app_config_serialzation_and_deserialization() {
+    let json_config = serde_json::json!({
+        "port": 5000,
+        "redis_connection_string": "dummy-value",
+        "pubkey_path": "dummy-value",
+        "privkey_path": "dummy-value",
+        "token_expiration_time": 300,
+        "proxy_routes": [
+            {
+                "inbound_route": "/test",
+                "outbound_route": "https://komodoplatform.com",
+                "allowed_methods": []
+            },
+            {
+                "inbound_route": "/test-2",
+                "outbound_route": "https://atomicdex.io",
+                "allowed_methods": []
+            }
+        ],
+        "rate_limiter": {
+            "rp_1_min": 555,
+            "rp_5_min": 555,
+            "rp_15_min": 555,
+            "rp_30_min": 555,
+            "rp_60_min": 555
+        },
+        "nodes": [
+            {
+                "name": "ETH",
+                "url": "https://dummy-address",
+                "authorized": false,
+            },
+            {
+                "name": "KMD",
+                "url": "https://dummy-address2",
+                "authorized": false,
+            }
+        ]
+    });
+
+    let actual_config: AppConfig = serde_json::from_str(&json_config.to_string()).unwrap();
+    let expected_config = get_app_config_test_instance();
+
+    assert_eq!(actual_config, expected_config);
+
+    // Backwards
+    let json = serde_json::to_value(expected_config).unwrap();
+    assert_eq!(json_config, json);
+    assert_eq!(json_config.to_string(), json.to_string());
+}
+
+#[test]
+fn test_from_fs() {
+    env::set_var("AUTH_APP_CONFIG_PATH", "../assets/.config_test");
+
+    let actual = AppConfig::from_fs().unwrap();
+    let expected = get_app_config_test_instance();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn test_get_node() {
+    let cfg = get_app_config_test_instance();
+
+    let node = cfg.get_node(String::from("ETH")).unwrap();
+    assert_eq!(node.name, "ETH");
+    assert_eq!(node.url, "https://dummy-address");
+
+    let node = cfg.get_node(String::from("KMD")).unwrap();
+    assert_eq!(node.name, "KMD");
+    assert_eq!(node.url, "https://dummy-address2");
 }

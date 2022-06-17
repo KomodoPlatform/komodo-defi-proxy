@@ -133,3 +133,12 @@ impl RateLimitOperations for Db {
         Ok(false)
     }
 }
+
+#[test]
+fn test_db_constants() {
+    assert_eq!(DB_RP_1_MIN, "rp:1_min");
+    assert_eq!(DB_RP_5_MIN, "rp:5_min");
+    assert_eq!(DB_RP_15_MIN, "rp:15_min");
+    assert_eq!(DB_RP_30_MIN, "rp:30_min");
+    assert_eq!(DB_RP_60_MIN, "rp:60_min");
+}

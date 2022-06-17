@@ -1,6 +1,7 @@
 use super::*;
 use ctx::{AppConfig, ProxyRoute};
 use db::*;
+use hyper::header::HeaderName;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{
@@ -9,7 +10,7 @@ use hyper::{
 };
 use hyper_tls::HttpsConnector;
 use ip_status::{get_ip_status_list, post_ip_status, IpStatus, IpStatusOperations};
-use jwt::generate_jwt;
+use jwt::{generate_jwt, JwtClaims};
 use proof_of_funding::{verify_message_and_balance, ProofOfFundingError};
 use rate_limiter::RateLimitOperations;
 use serde::{Deserialize, Serialize};
@@ -23,7 +24,7 @@ macro_rules! http_log_format {
 }
 
 impl AppConfig {
-    fn get_proxy_route_by_inbound(&self, inbound: String) -> Option<&ProxyRoute> {
+    pub(crate) fn get_proxy_route_by_inbound(&self, inbound: String) -> Option<&ProxyRoute> {
         let route_index = self.proxy_routes.iter().position(|r| {
             r.inbound_route == inbound || r.inbound_route.to_owned() + "/" == inbound
         });
@@ -53,8 +54,12 @@ pub(crate) fn response_by_status(status: StatusCode) -> GenericResult<Response<B
         .body(Body::from(Vec::new()))?)
 }
 
-async fn insert_jwt_to_http_header(headers: &mut HeaderMap<HeaderValue>) -> GenericResult<()> {
-    let auth_token = generate_jwt().await?;
+pub(crate) async fn insert_jwt_to_http_header(
+    cfg: &AppConfig,
+    headers: &mut HeaderMap<HeaderValue>,
+) -> GenericResult<()> {
+    let claims = &JwtClaims::new(cfg.token_expiration_time.unwrap_or(3600));
+    let auth_token = generate_jwt(cfg, claims).await?;
     headers.insert(
         header::AUTHORIZATION,
         format!("Bearer {}", auth_token).parse()?,
@@ -72,7 +77,7 @@ async fn parse_payload(req: Request<Body>) -> GenericResult<(Request<Body>, RpcP
     Ok((Request::from_parts(parts, Body::from(body_bytes)), payload))
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct RpcPayload {
     pub(crate) method: String,
     pub(crate) params: serde_json::value::Value,
@@ -106,7 +111,10 @@ async fn proxy(
         }
 
         // modify outgoing request
-        if insert_jwt_to_http_header(req.headers_mut()).await.is_err() {
+        if insert_jwt_to_http_header(cfg, req.headers_mut())
+            .await
+            .is_err()
+        {
             log::error!(
                 "{}",
                 http_log_format!(
@@ -151,10 +159,10 @@ async fn proxy(
             req.headers_mut().remove(key);
         }
 
-        req.headers_mut().insert(
-            header::HeaderName::from_static("x-forwarded-for"),
-            x_forwarded_for,
-        );
+        req.headers_mut()
+            .insert(HeaderName::from_static("x-forwarded-for"), x_forwarded_for);
+        req.headers_mut()
+            .insert(header::CONTENT_TYPE, "application/json".parse()?);
 
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build(https);
@@ -212,8 +220,8 @@ async fn router(
 
         match (req.method(), req.uri().path()) {
             (&Method::GET, "/") => return get_healthcheck().await,
-            (&Method::GET, "/ip-status") => return post_ip_status(cfg, req).await,
-            (&Method::POST, "/ip-status") => return get_ip_status_list(cfg).await,
+            (&Method::GET, "/ip-status") => return get_ip_status_list(cfg).await,
+            (&Method::POST, "/ip-status") => return post_ip_status(cfg, req).await,
             _ => {}
         };
     };
@@ -330,4 +338,117 @@ pub(crate) async fn serve(cfg: &'static AppConfig) -> GenericResult<()> {
     log::info!("AtomicDEX Auth API serving on http://{}", addr);
 
     Ok(server.await?)
+}
+
+#[test]
+fn test_rpc_payload_serialzation_and_deserialization() {
+    let json_payload = json!({
+        "method": "dummy-value",
+        "params": [],
+        "id": 1,
+        "jsonrpc": "2.0",
+        "signed_message": {
+            "coin_ticker": "ETH",
+            "address": "dummy-value",
+            "timestamp_message": 1655319963,
+            "signature": "dummy-value",
+         }
+    });
+
+    let actual_payload: RpcPayload = serde_json::from_str(&json_payload.to_string()).unwrap();
+
+    let expected_payload = RpcPayload {
+        method: String::from("dummy-value"),
+        params: json!([]),
+        id: 1,
+        jsonrpc: String::from("2.0"),
+        signed_message: SignedMessage {
+            coin_ticker: String::from("ETH"),
+            address: String::from("dummy-value"),
+            timestamp_message: 1655319963,
+            signature: String::from("dummy-value"),
+        },
+    };
+
+    assert_eq!(actual_payload, expected_payload);
+
+    // Backwards
+    let json = serde_json::to_value(expected_payload).unwrap();
+    assert_eq!(json_payload, json);
+    assert_eq!(json_payload.to_string(), json.to_string());
+}
+
+#[test]
+fn test_get_proxy_route_by_inbound() {
+    let cfg = ctx::get_app_config_test_instance();
+
+    let proxy_route = cfg
+        .get_proxy_route_by_inbound(String::from("/test"))
+        .unwrap();
+
+    assert_eq!(proxy_route.outbound_route, "https://komodoplatform.com");
+
+    let proxy_route = cfg
+        .get_proxy_route_by_inbound(String::from("/test-2"))
+        .unwrap();
+
+    assert_eq!(proxy_route.outbound_route, "https://atomicdex.io");
+}
+
+#[test]
+fn test_respond_by_status() {
+    let all_supported_status_codes = [
+        100, 101, 102, 200, 201, 202, 203, 204, 205, 206, 207, 208, 226, 300, 301, 302, 303, 304,
+        305, 307, 308, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414,
+        415, 416, 417, 418, 421, 422, 423, 424, 426, 428, 429, 431, 451, 500, 501, 502, 503, 504,
+        505, 506, 507, 508, 510, 511,
+    ];
+
+    for status_code in all_supported_status_codes {
+        let status_type = StatusCode::from_u16(status_code).unwrap();
+        let res = response_by_status(status_type).unwrap();
+        assert_eq!(res.status(), status_type);
+    }
+}
+
+#[tokio::test]
+async fn test_parse_payload() {
+    let serialized_payload = json!({
+        "method": "dummy-value",
+        "params": [],
+        "id": 1,
+        "jsonrpc": "2.0",
+        "signed_message": {
+            "coin_ticker": "ETH",
+            "address": "dummy-value",
+            "timestamp_message": 1655319963,
+            "signature": "dummy-value",
+         }
+    })
+    .to_string();
+
+    let mut req = Request::new(Body::from(serialized_payload));
+    req.headers_mut().insert(
+        HeaderName::from_static("dummy-header"),
+        "dummy-value".parse().unwrap(),
+    );
+
+    let (req, payload) = parse_payload(req).await.unwrap();
+    let header_value = req.headers().get("dummy-header").unwrap();
+
+    let expected_payload = RpcPayload {
+        method: String::from("dummy-value"),
+        params: json!([]),
+        id: 1,
+        jsonrpc: String::from("2.0"),
+        signed_message: SignedMessage {
+            coin_ticker: String::from("ETH"),
+            address: String::from("dummy-value"),
+            timestamp_message: 1655319963,
+            signature: String::from("dummy-value"),
+        },
+    };
+
+    assert_eq!(payload, expected_payload);
+    assert_eq!(header_value, "dummy-value");
 }

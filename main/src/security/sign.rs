@@ -17,8 +17,9 @@ pub(crate) trait SignOps {
     fn verify_message(&self) -> GenericResult<bool>;
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct SignedMessage {
+    pub(crate) coin_ticker: String,
     pub(crate) address: String,
     pub(crate) timestamp_message: u64,
     pub(crate) signature: String,
@@ -28,9 +29,11 @@ impl SignOps for SignedMessage {
     fn sign_message_hash(&self) -> [u8; 32] {
         *keccak256(
             format!(
-                "{}{}{}",
+                "{}{}{}{}{}",
                 "\x19aDEX Auth Ethereum Signed Message:\n",
-                self.timestamp_message.to_string().len(),
+                self.coin_ticker.len() + 1 + self.timestamp_message.to_string().len(),
+                self.coin_ticker,
+                "-",
                 self.timestamp_message
             )
             .as_bytes(),
@@ -117,17 +120,180 @@ impl SignOps for SignedMessage {
 }
 
 #[test]
+fn test_signed_message_serialzation_and_deserialization() {
+    let json_signed_message = serde_json::json!({
+        "address": "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+        "timestamp_message": 0,
+        "signature": "",
+        "coin_ticker": "ETH"
+    });
+
+    let actual_signed_message: SignedMessage =
+        serde_json::from_str(&json_signed_message.to_string()).unwrap();
+
+    let expected_signed_message = SignedMessage {
+        address: String::from("0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"),
+        timestamp_message: u64::default(),
+        signature: String::new(),
+        coin_ticker: String::from("ETH"),
+    };
+
+    assert_eq!(actual_signed_message, expected_signed_message);
+
+    // Backwards
+    let json = serde_json::to_value(expected_signed_message).unwrap();
+    assert_eq!(json_signed_message, json);
+    assert_eq!(json_signed_message.to_string(), json.to_string());
+}
+
+#[test]
+fn test_sign_message_hash() {
+    let mut signed_message = SignedMessage {
+        address: String::from("0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"),
+        timestamp_message: u64::default(),
+        signature: String::default(),
+        coin_ticker: String::from("ETH"),
+    };
+
+    let msg = signed_message.sign_message_hash();
+    assert_eq!(
+        msg,
+        [
+            40, 94, 4, 164, 193, 174, 113, 197, 78, 253, 205, 114, 164, 104, 122, 142, 78, 114, 93,
+            16, 247, 32, 31, 149, 235, 137, 230, 30, 59, 94, 42, 126
+        ]
+    );
+
+    signed_message.timestamp_message = 1655376657;
+    let msg = signed_message.sign_message_hash();
+    assert_eq!(
+        msg,
+        [
+            205, 132, 124, 222, 45, 24, 113, 33, 220, 107, 143, 203, 91, 131, 10, 220, 169, 108,
+            179, 155, 255, 68, 163, 43, 40, 123, 167, 42, 15, 84, 198, 37
+        ]
+    );
+
+    signed_message.coin_ticker = String::default();
+    let msg = signed_message.sign_message_hash();
+    assert_eq!(
+        msg,
+        [
+            127, 225, 153, 178, 139, 76, 231, 144, 246, 119, 61, 70, 44, 23, 37, 243, 51, 134, 25,
+            12, 133, 158, 118, 50, 178, 69, 167, 133, 188, 161, 99, 224
+        ]
+    );
+}
+
+#[test]
+fn test_checksum_addr() {
+    let mut signed_message = SignedMessage {
+        address: String::from("0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"),
+        timestamp_message: u64::default(),
+        signature: String::new(),
+        coin_ticker: String::from("ETH"),
+    };
+
+    assert_eq!(
+        signed_message.checksum_address(),
+        "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"
+    );
+
+    signed_message.address = String::from("0x52908400098527886E0F7030069857D2E4169EE7");
+    assert_eq!(
+        signed_message.checksum_address(),
+        "0x52908400098527886E0F7030069857D2E4169EE7"
+    );
+
+    signed_message.address = String::from("0x8617e340b3d01fa5f11f306f4090fd50e238070d");
+    assert_eq!(
+        signed_message.checksum_address(),
+        "0x8617E340B3D01FA5F11F306F4090FD50E238070D"
+    );
+
+    signed_message.address = String::from("0xde709f2102306220921060314715629080e2fb77");
+    assert_eq!(
+        signed_message.checksum_address(),
+        "0xde709f2102306220921060314715629080e2fb77"
+    );
+
+    signed_message.address = String::from("0x27b1fdb04752bbc536007a920d24acb045561c26");
+    assert_eq!(
+        signed_message.checksum_address(),
+        "0x27b1fdb04752bbc536007a920d24acb045561c26"
+    );
+
+    signed_message.address = String::from("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed");
+    assert_eq!(
+        signed_message.checksum_address(),
+        "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+    );
+}
+
+#[test]
+fn test_is_valid_checksum_addr() {
+    let mut signed_message = SignedMessage {
+        address: String::from("0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"),
+        timestamp_message: u64::default(),
+        signature: String::new(),
+        coin_ticker: String::from("ETH"),
+    };
+    assert!(signed_message.is_valid_checksum_addr());
+
+    signed_message.address = String::from("0x52908400098527886E0F7030069857D2E4169EE7");
+    assert!(signed_message.is_valid_checksum_addr());
+
+    signed_message.address = String::from("0x8617e340B3D01FA5F11F306F4090FD50E238070D");
+    assert!(!signed_message.is_valid_checksum_addr());
+
+    signed_message.address = String::from("0xd1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb");
+    assert!(!signed_message.is_valid_checksum_addr());
+}
+
+#[test]
+fn test_addr_from_str_and_valid_addr_from_str() {
+    let mut signed_message = SignedMessage {
+        address: String::from("0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"),
+        timestamp_message: u64::default(),
+        signature: String::new(),
+        coin_ticker: String::from("ETH"),
+    };
+    signed_message.addr_from_str().unwrap();
+    signed_message.valid_addr_from_str().unwrap();
+
+    signed_message.address = String::from("0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb");
+    signed_message.addr_from_str().unwrap();
+    signed_message.valid_addr_from_str().unwrap();
+
+    signed_message.address = String::from("0x52908400098527886E0F7030069857D2E4169EE7");
+    signed_message.addr_from_str().unwrap();
+    signed_message.valid_addr_from_str().unwrap();
+
+    signed_message.address = String::from("0x709f2102306220921060314715629080e2fb77");
+    signed_message.addr_from_str().unwrap_err();
+    signed_message.valid_addr_from_str().unwrap_err();
+
+    signed_message.address = String::from("0x27b1fdb04752bbc536007a920d2");
+    signed_message.addr_from_str().unwrap_err();
+    signed_message.valid_addr_from_str().unwrap_err();
+
+    signed_message.address = String::from("5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed");
+    signed_message.addr_from_str().unwrap_err();
+    signed_message.valid_addr_from_str().unwrap_err();
+}
+
+#[test]
 fn test_message_sign_and_verify() {
     let timestamp_message = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_secs()
-        + 5 * 60;
+        .as_secs();
 
     let mut signed_message = SignedMessage {
         address: String::from("0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29"),
-        timestamp_message,
+        timestamp_message: timestamp_message - 5 * 60,
         signature: String::new(),
+        coin_ticker: String::from("ETH"),
     };
 
     let key_pair = ethkey::KeyPair::from_secret_slice(
@@ -136,6 +302,9 @@ fn test_message_sign_and_verify() {
     .unwrap();
 
     signed_message.sign_message(&key_pair.secret()).unwrap();
+    assert!(!signed_message.verify_message().unwrap());
 
-    assert_eq!(signed_message.verify_message().unwrap(), true);
+    signed_message.timestamp_message = timestamp_message + 5 * 60;
+    signed_message.sign_message(&key_pair.secret()).unwrap();
+    assert!(signed_message.verify_message().unwrap());
 }

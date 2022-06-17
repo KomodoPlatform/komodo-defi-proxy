@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) const DB_STATUS_LIST: &str = "status_list";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct IpStatusPayload {
     pub(crate) ip: String,
     pub(crate) status: i8,
@@ -122,4 +122,54 @@ impl IpStatusOperations for Db {
             .await
             .unwrap_or_default()
     }
+}
+
+#[test]
+fn test_ip_status_constants() {
+    assert_eq!(DB_STATUS_LIST, "status_list");
+}
+
+#[test]
+fn test_ip_status_serialzation_and_deserialization() {
+    let json_ip_status = serde_json::json!({
+        "ip": "127.0.0.1",
+        "status": 0
+    });
+
+    let actual_ip_status: IpStatusPayload =
+        serde_json::from_str(&json_ip_status.to_string()).unwrap();
+
+    let expected_ip_status = IpStatusPayload {
+        ip: String::from("127.0.0.1"),
+        status: 0,
+    };
+
+    assert_eq!(actual_ip_status, expected_ip_status);
+
+    // Backwards
+    let json = serde_json::to_value(expected_ip_status).unwrap();
+    assert_eq!(json_ip_status, json);
+    assert_eq!(json_ip_status.to_string(), json.to_string());
+}
+
+#[test]
+fn test_if_ip_status_values_same_as_before() {
+    assert_eq!(IpStatus::None, IpStatus::from_i8(-1));
+    assert_eq!(IpStatus::Trusted, IpStatus::from_i8(0));
+    assert_eq!(IpStatus::Blocked, IpStatus::from_i8(1));
+}
+
+#[test]
+fn test_from_redis_value() {
+    let redis_val = redis::Value::Int(-1);
+    let val: IpStatus = redis::from_redis_value(&redis_val).unwrap();
+    assert_eq!(val, IpStatus::None);
+
+    let redis_val = redis::Value::Int(0);
+    let val: IpStatus = redis::from_redis_value(&redis_val).unwrap();
+    assert_eq!(val, IpStatus::Trusted);
+
+    let redis_val = redis::Value::Int(1);
+    let val: IpStatus = redis::from_redis_value(&redis_val).unwrap();
+    assert_eq!(val, IpStatus::Blocked);
 }
