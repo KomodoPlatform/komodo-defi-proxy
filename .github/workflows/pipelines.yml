@@ -125,8 +125,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        rust: [nightly-2022-03-17]
-    if: github.event_name == 'pull_request' && github.ref =! 'refs/heads/main'
+    if: github.event_name == 'pull_request' && github.ref != 'refs/heads/main'
     steps:
       - uses: actions/checkout@v2
 
