@@ -3,11 +3,9 @@ on:
   push:
     branches:
       - main
-      - ci-configuration
   pull_request:
     branches:
       - main
-      - ci-configuration
 
 jobs:
   check:
@@ -87,7 +85,7 @@ jobs:
       with:
         command: test
 
-  build:
+  binary-build:
     timeout-minutes: 10
     runs-on: ${{ matrix.os }}
     strategy:
@@ -105,3 +103,15 @@ jobs:
       with:
         command: build
         args: --release
+
+  container-build:
+    timeout-minutes: 15
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [nightly-2022-03-17]
+    steps:
+    - uses: actions/checkout@v2
+    - name: build container image
+      run: make container-build
