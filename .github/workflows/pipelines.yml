@@ -133,9 +133,9 @@ jobs:
 #      run: make container-build
 #
 #
-  container-build-and-push:
-    needs: binary-build
-    # timeout-minutes: 15
+    container-build-and-push:
+    # needs: binary-build
+    timeout-minutes: 15
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
