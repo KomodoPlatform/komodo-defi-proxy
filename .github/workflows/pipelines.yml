@@ -132,7 +132,7 @@ jobs:
 #    - name: build container image
 #      run: make container-build
 
-    container-build-and-push:
+  container-build-and-push:
     # needs: binary-build
     timeout-minutes: 15
     runs-on: ${{ matrix.os }}
