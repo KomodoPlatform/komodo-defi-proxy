@@ -158,4 +158,4 @@ jobs:
           context: .
           file: ./Containerfile
           push: true
-          tags: ${{ secrets.DOCKER_HUB_USERNAME }}/atomicdex-gui-auth:stable
+          tags: komodoofficial/atomicdex-gui-auth:stable
