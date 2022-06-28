@@ -180,7 +180,7 @@ jobs:
           git clone git@github.com:KomodoPlatform/atomicdex-deployments.git
           if [ -d "atomicdex-deployments/atomicdex-gui-auth" ]; then
             cd atomicdex-deployments/atomicdex-gui-auth
-            sed -i "1s/^.*$/$(COMMIT_HASH)/" .commit
+            sed -i "1s/^.*$/$(GITHUB_SHA::9)/" .commit
             git config --global user.email "linuxci@komodoplatform.com"
             git config --global user.name "linuxci"
             git add .commit
