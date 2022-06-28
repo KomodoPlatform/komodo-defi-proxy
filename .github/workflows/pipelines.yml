@@ -159,3 +159,32 @@ jobs:
           file: ./Containerfile
           push: true
           tags: komodoofficial/atomicdex-gui-auth:stable
+
+  deployment-commitment:
+    needs: container-build-and-push
+    timeout-minutes: 15
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Enable ssh key
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: commitment step
+        run: |
+          git clone git@github.com:KomodoPlatform/atomicdex-deployments.git
+          if [ -d "atomicdex-deployments/atomicdex-gui-auth" ]; then
+            cd atomicdex-deployments/atomicdex-gui-auth
+            sed -i "1s/^.*$/$(COMMIT_HASH)/" .commit
+            git config --global user.email "linuxci@komodoplatform.com"
+            git config --global user.name "linuxci"
+            git add .commit
+            git commit -m "[atomicdex-gui-auth] ${GITHUB_SHA::9} is committed for git & container registry"
+            git push
+          fi
+
