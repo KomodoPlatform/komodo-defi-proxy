@@ -199,6 +199,7 @@ async fn proxy(
     response_by_status(StatusCode::NOT_FOUND)
 }
 
+#[allow(dead_code)]
 fn get_real_address(req: &Request<Body>, remote_addr: &SocketAddr) -> GenericResult<SocketAddr> {
     if let Some(ip) = req.headers().get("x-forwarded-for") {
         let addr = IpAddr::from_str(ip.to_str()?)?;
@@ -214,20 +215,20 @@ async fn router(
     req: Request<Body>,
     remote_addr: SocketAddr,
 ) -> GenericResult<Response<Body>> {
-    let remote_addr = match get_real_address(&req, &remote_addr) {
-        Ok(t) => t,
-        _ => {
-            log::error!(
-                "{}",
-                http_log_format!(
-                    remote_addr.ip(),
-                    req.uri(),
-                    "Reading real remote address failed, returning 500."
-                )
-            );
-            return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
+    // let remote_addr = match get_real_address(&req, &remote_addr) {
+    //     Ok(t) => t,
+    //     _ => {
+    //         log::error!(
+    //             "{}",
+    //             http_log_format!(
+    //                 remote_addr.ip(),
+    //                 req.uri(),
+    //                 "Reading real remote address failed, returning 500."
+    //             )
+    //         );
+    //         return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+    //     }
+    // };
 
     log::info!(
         "{}",
