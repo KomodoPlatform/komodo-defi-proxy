@@ -16,7 +16,8 @@ use rate_limiter::RateLimitOperations;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sign::SignedMessage;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
+use std::str::FromStr;
 
 macro_rules! http_log_format {
   ($ip: expr, $path: expr, $format: expr, $($args: tt)+) => {format!(concat!("[{} -> {}] ", $format), $ip, $path, $($args)+)};
@@ -198,11 +199,37 @@ async fn proxy(
     response_by_status(StatusCode::NOT_FOUND)
 }
 
+#[allow(dead_code)]
+fn get_real_address(req: &Request<Body>, remote_addr: &SocketAddr) -> GenericResult<SocketAddr> {
+    if let Some(ip) = req.headers().get("x-forwarded-for") {
+        let addr = IpAddr::from_str(ip.to_str()?)?;
+
+        return Ok(SocketAddr::new(addr, remote_addr.port()));
+    }
+
+    Ok(*remote_addr)
+}
+
 async fn router(
     cfg: &AppConfig,
     req: Request<Body>,
     remote_addr: SocketAddr,
 ) -> GenericResult<Response<Body>> {
+    let remote_addr = match get_real_address(&req, &remote_addr) {
+        Ok(t) => t,
+        _ => {
+            log::error!(
+                "{}",
+                http_log_format!(
+                    remote_addr.ip(),
+                    req.uri(),
+                    "Reading real remote address failed, returning 500."
+                )
+            );
+            return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
     log::info!(
         "{}",
         http_log_format!(remote_addr.ip(), req.uri(), "Request received.")
@@ -409,6 +436,25 @@ fn test_respond_by_status() {
         let res = response_by_status(status_type).unwrap();
         assert_eq!(res.status(), status_type);
     }
+}
+
+#[test]
+fn test_get_real_address() {
+    let mut req = Request::new(Body::from(Vec::new()));
+
+    let addr = IpAddr::from_str("127.0.0.1").unwrap();
+    let socket_addr = SocketAddr::new(addr, 80);
+
+    let remote_addr = get_real_address(&req, &socket_addr).unwrap();
+    assert_eq!("127.0.0.1", remote_addr.ip().to_string());
+
+    req.headers_mut().insert(
+        HeaderName::from_static("x-forwarded-for"),
+        "0.0.0.0".parse().unwrap(),
+    );
+
+    let remote_addr = get_real_address(&req, &socket_addr).unwrap();
+    assert_eq!("0.0.0.0", remote_addr.ip().to_string());
 }
 
 #[tokio::test]
