@@ -4,9 +4,7 @@ Creating rsa key pairs
 
 ```sh
 openssl genrsa -out private-key.pem 2048
-```
 
-```sh
 openssl rsa -in private-key.pem -outform PEM -pubout -out public-key.pem
 ```
 
