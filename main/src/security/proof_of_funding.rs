@@ -11,7 +11,7 @@ pub(crate) enum ProofOfFundingError {
     RpcClientNotFound,
     InsufficientBalance,
     ErrorFromRpcCall,
-    RpcCallFailed,
+    RpcCallFailed(String),
 }
 
 pub(crate) async fn verify_message_and_balance(
@@ -35,7 +35,7 @@ pub(crate) async fn verify_message_and_balance(
                     return Err(ProofOfFundingError::ErrorFromRpcCall);
                 }
                 Ok(_) => return Err(ProofOfFundingError::InsufficientBalance),
-                Err(_) => return Err(ProofOfFundingError::RpcCallFailed),
+                Err(e) => return Err(ProofOfFundingError::RpcCallFailed(e.to_string())),
             };
         };
 
