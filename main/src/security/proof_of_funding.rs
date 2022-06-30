@@ -32,14 +32,10 @@ pub(crate) async fn verify_message_and_balance(
             match rpc_client.send(cfg, rpc_payload, node.authorized).await {
                 Ok(res) if res["result"] != Json::Null && res["result"] != "0x0" => return Ok(()),
                 Ok(res) if res["error"] != Json::Null => {
-                    log::debug!("Rpc returned error: {}", res);
                     return Err(ProofOfFundingError::ErrorFromRpcCall);
                 }
                 Ok(_) => return Err(ProofOfFundingError::InsufficientBalance),
-                Err(e) => {
-                    log::debug!("Rpc call failed: {}", e.to_string());
-                    return Err(ProofOfFundingError::RpcCallFailed);
-                }
+                Err(_) => return Err(ProofOfFundingError::RpcCallFailed),
             };
         };
 
