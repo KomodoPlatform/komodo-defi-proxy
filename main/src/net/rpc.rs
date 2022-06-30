@@ -36,7 +36,6 @@ impl RpcClient {
         let client = hyper::Client::builder().build(https);
 
         let res = client.request(req).await?;
-        log::debug!("response: {:?}", res);
         let body = aggregate(res).await?;
 
         Ok(from_reader(Buf::reader(body))?)

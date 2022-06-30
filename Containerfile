@@ -4,8 +4,9 @@ WORKDIR /usr/src/atomicdex-gui-auth
 
 ## Install Rust
 RUN apt-get update \
-	&& apt-get install -y build-essential curl pkg-config libssl-dev \
+	&& apt-get install -y build-essential curl pkg-config libssl-dev ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
+RUN update-ca-certificates
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
