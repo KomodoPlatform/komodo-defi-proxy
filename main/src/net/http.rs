@@ -346,7 +346,18 @@ async fn router(
                     );
                     response_by_status(StatusCode::NOT_ACCEPTABLE)
                 }
-                _ => response_by_status(StatusCode::INTERNAL_SERVER_ERROR),
+                e => {
+                    log::error!(
+                        "{}",
+                        http_log_format!(
+                            remote_addr.ip(),
+                            req_path,
+                            "verify_message_and_balance failed: {:?}",
+                            e
+                        )
+                    );
+                    response_by_status(StatusCode::INTERNAL_SERVER_ERROR)
+                }
             }
         }
     }
