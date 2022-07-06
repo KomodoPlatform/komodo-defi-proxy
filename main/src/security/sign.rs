@@ -4,6 +4,7 @@ use core::{convert::From, str::FromStr};
 use ethereum_types::{Address, H256};
 use ethkey::{sign, verify_address, Secret, Signature};
 use serde::{Deserialize, Serialize};
+use serialization::{CompactInteger, Serializable, Stream};
 use sha3::{Digest, Keccak256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -27,17 +28,20 @@ pub(crate) struct SignedMessage {
 
 impl SignOps for SignedMessage {
     fn sign_message_hash(&self) -> [u8; 32] {
-        *keccak256(
-            format!(
-                "{}{}{}{}{}",
-                "\x19aDEX Auth Ethereum Signed Message:\n",
-                self.coin_ticker.len() + 1 + self.timestamp_message.to_string().len(),
-                self.coin_ticker,
-                "-",
-                self.timestamp_message
-            )
-            .as_bytes(),
-        )
+        let prefix = "atomicDEX Auth Ethereum Signed Message:\n";
+        let mut stream = Stream::new();
+        let prefix_len = CompactInteger::from(prefix.len());
+        prefix_len.serialize(&mut stream);
+        stream.append_slice(prefix.as_bytes());
+        stream.append_slice(
+            self.timestamp_message
+                .to_string()
+                .len()
+                .to_string()
+                .as_bytes(),
+        );
+        stream.append_slice(self.timestamp_message.to_string().as_bytes());
+        keccak256(&stream.out()).take()
     }
 
     /// Displays the address in mixed-case checksum form
@@ -159,8 +163,8 @@ fn test_sign_message_hash() {
     assert_eq!(
         msg,
         [
-            40, 94, 4, 164, 193, 174, 113, 197, 78, 253, 205, 114, 164, 104, 122, 142, 78, 114, 93,
-            16, 247, 32, 31, 149, 235, 137, 230, 30, 59, 94, 42, 126
+            58, 69, 48, 53, 234, 107, 112, 243, 143, 137, 89, 208, 73, 115, 136, 31, 254, 255, 243,
+            123, 197, 144, 241, 223, 80, 91, 195, 194, 192, 86, 180, 33
         ]
     );
 
@@ -169,8 +173,8 @@ fn test_sign_message_hash() {
     assert_eq!(
         msg,
         [
-            205, 132, 124, 222, 45, 24, 113, 33, 220, 107, 143, 203, 91, 131, 10, 220, 169, 108,
-            179, 155, 255, 68, 163, 43, 40, 123, 167, 42, 15, 84, 198, 37
+            178, 222, 11, 225, 166, 231, 156, 50, 173, 22, 122, 90, 196, 182, 121, 168, 218, 27, 4,
+            223, 95, 245, 64, 131, 181, 196, 108, 220, 13, 219, 36, 94
         ]
     );
 
@@ -179,8 +183,8 @@ fn test_sign_message_hash() {
     assert_eq!(
         msg,
         [
-            127, 225, 153, 178, 139, 76, 231, 144, 246, 119, 61, 70, 44, 23, 37, 243, 51, 134, 25,
-            12, 133, 158, 118, 50, 178, 69, 167, 133, 188, 161, 99, 224
+            178, 222, 11, 225, 166, 231, 156, 50, 173, 22, 122, 90, 196, 182, 121, 168, 218, 27, 4,
+            223, 95, 245, 64, 131, 181, 196, 108, 220, 13, 219, 36, 94
         ]
     );
 }
