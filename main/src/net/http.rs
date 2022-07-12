@@ -300,6 +300,21 @@ async fn router(
             response_by_status(StatusCode::FORBIDDEN)
         }
         _ => {
+            let signed_message_status = verify_message_and_balance(cfg, &payload).await;
+
+            if let Err(ProofOfFundingError::InvalidSignedMessage) = signed_message_status {
+                log::warn!(
+                    "{}",
+                    http_log_format!(
+                        remote_addr.ip(),
+                        req_path,
+                        "Request has invalid signed message, returning 401."
+                    )
+                );
+
+                return response_by_status(StatusCode::UNAUTHORIZED);
+            };
+
             match db
                 .rate_exceeded(remote_addr.ip().to_string(), &cfg.rate_limiter)
                 .await
@@ -308,9 +323,41 @@ async fn router(
                 _ => {
                     log::warn!(
                         "{}",
-                        http_log_format!(remote_addr.ip(), req_path, "Rate exceed, returning 429.")
+                        http_log_format!(
+                            remote_addr.ip(),
+                            req_path,
+                            "Rate exceed, checking balance for {} address.",
+                            payload.signed_message.address
+                        )
                     );
-                    return response_by_status(StatusCode::TOO_MANY_REQUESTS);
+
+                    match verify_message_and_balance(cfg, &payload).await {
+                        Ok(_) => {}
+                        Err(ProofOfFundingError::InsufficientBalance) => {
+                            log::warn!(
+                                "{}",
+                                http_log_format!(
+                                    remote_addr.ip(),
+                                    req_path,
+                                    "Wallet {} has insufficient balance, returning 406.",
+                                    payload.signed_message.address
+                                )
+                            );
+                            return response_by_status(StatusCode::NOT_ACCEPTABLE);
+                        }
+                        e => {
+                            log::error!(
+                                "{}",
+                                http_log_format!(
+                                    remote_addr.ip(),
+                                    req_path,
+                                    "verify_message_and_balance failed: {:?}",
+                                    e
+                                )
+                            );
+                            return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+                        }
+                    }
                 }
             }
 
@@ -321,44 +368,7 @@ async fn router(
                 );
             };
 
-            match verify_message_and_balance(cfg, &payload).await {
-                Ok(_) => proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await,
-                Err(ProofOfFundingError::InvalidSignedMessage) => {
-                    log::warn!(
-                        "{}",
-                        http_log_format!(
-                            remote_addr.ip(),
-                            req_path,
-                            "Request has invalid signed message, returning 401."
-                        )
-                    );
-                    response_by_status(StatusCode::UNAUTHORIZED)
-                }
-                Err(ProofOfFundingError::InsufficientBalance) => {
-                    log::warn!(
-                        "{}",
-                        http_log_format!(
-                            remote_addr.ip(),
-                            req_path,
-                            "Wallet {} has insufficient balance, returning 406.",
-                            payload.signed_message.address
-                        )
-                    );
-                    response_by_status(StatusCode::NOT_ACCEPTABLE)
-                }
-                e => {
-                    log::error!(
-                        "{}",
-                        http_log_format!(
-                            remote_addr.ip(),
-                            req_path,
-                            "verify_message_and_balance failed: {:?}",
-                            e
-                        )
-                    );
-                    response_by_status(StatusCode::INTERNAL_SERVER_ERROR)
-                }
-            }
+            proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await
         }
     }
 }
