@@ -46,6 +46,7 @@ Create the configuration file for app runtime.
 
 Expose configuration file's path as an environment variable in `AUTH_APP_CONFIG_PATH`.
 
+***Important Note:*** The environment where the application will be deployed, the timezone MUST be as UTC.
 
 ### Architecture
 ![2022-05-25_09-44](https://user-images.githubusercontent.com/39852038/170197519-005732b5-b8b6-44f7-99df-ab1294f8ae21.png)
