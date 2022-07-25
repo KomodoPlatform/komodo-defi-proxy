@@ -19,7 +19,7 @@ pub(crate) async fn verify_message_and_balance(
     payload: &RpcPayload,
 ) -> Result<(), ProofOfFundingError> {
     if let Ok(true) = payload.signed_message.verify_message() {
-        if let Some(node) = cfg.get_node(String::from("ETH")) {
+        if let Some(node) = cfg.get_node(payload.signed_message.coin_ticker.clone()) {
             let rpc_payload = json!({
                 "id": 1,
                 "jsonrpc": "2.0",
