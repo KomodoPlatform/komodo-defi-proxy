@@ -4,12 +4,12 @@ use ctx::get_app_config;
 use db::get_redis_connection;
 use http::serve;
 
+#[path = "security/address_status.rs"]
+mod address_status;
 mod ctx;
 mod db;
 #[path = "net/http.rs"]
 mod http;
-#[path = "security/ip_status.rs"]
-mod ip_status;
 #[path = "security/jwt.rs"]
 mod jwt;
 #[path = "security/proof_of_funding.rs"]

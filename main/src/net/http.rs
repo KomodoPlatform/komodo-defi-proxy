@@ -1,4 +1,7 @@
 use super::*;
+use address_status::{
+    get_address_status_list, post_address_status, AddressStatus, AddressStatusOperations,
+};
 use ctx::{AppConfig, ProxyRoute};
 use db::*;
 use hyper::header::HeaderName;
@@ -9,7 +12,6 @@ use hyper::{
     Body, HeaderMap, Method, Request, Response, Server, StatusCode,
 };
 use hyper_tls::HttpsConnector;
-use ip_status::{get_ip_status_list, post_ip_status, IpStatus, IpStatusOperations};
 use jwt::{generate_jwt, JwtClaims};
 use proof_of_funding::{verify_message_and_balance, ProofOfFundingError};
 use rate_limiter::RateLimitOperations;
@@ -20,8 +22,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
 macro_rules! http_log_format {
-  ($ip: expr, $path: expr, $format: expr, $($args: tt)+) => {format!(concat!("[{} -> {}] ", $format), $ip, $path, $($args)+)};
-  ($ip: expr, $path: expr, $format: expr) => {format!(concat!("[{} -> {}] ", $format), $ip, $path)}
+  ($ip: expr, $address: expr, $path: expr, $format: expr, $($args: tt)+) => {format!(concat!("[Ip: {} | Pubkey: {} | Path: {}] ", $format), $ip, $address, $path, $($args)+)};
+  ($ip: expr, $address: expr, $path: expr, $format: expr) => {format!(concat!("[Ip: {} | Pubkey: {} | Path: {}] ", $format), $ip, $address, $path)}
 }
 
 impl AppConfig {
@@ -103,6 +105,7 @@ async fn proxy(
                 "{}",
                 http_log_format!(
                     remote_addr.ip(),
+                    payload.signed_message.address,
                     req.uri(),
                     "Method {} not allowed for, returning 403.",
                     payload.method
@@ -120,6 +123,7 @@ async fn proxy(
                 "{}",
                 http_log_format!(
                     remote_addr.ip(),
+                    payload.signed_message.address,
                     req.uri(),
                     "Error inserting JWT into http header, returning 500."
                 )
@@ -135,6 +139,7 @@ async fn proxy(
                     "{}",
                     http_log_format!(
                         remote_addr.ip(),
+                        payload.signed_message.address,
                         original_req_uri,
                         "Error type casting value of {} into Uri, returning 500.",
                         proxy_route.outbound_route
@@ -176,6 +181,7 @@ async fn proxy(
                     "{}",
                     http_log_format!(
                         remote_addr.ip(),
+                        payload.signed_message.address,
                         original_req_uri,
                         "Couldn't reach {}, returning 503.",
                         target_uri
@@ -192,6 +198,7 @@ async fn proxy(
         "{}",
         http_log_format!(
             remote_addr.ip(),
+            payload.signed_message.address,
             req.uri(),
             "Proxy route not found, returning 404."
         )
@@ -222,6 +229,7 @@ async fn router(
                 "{}",
                 http_log_format!(
                     remote_addr.ip(),
+                    String::from("-"),
                     req.uri(),
                     "Reading real remote address failed, returning 500."
                 )
@@ -230,25 +238,21 @@ async fn router(
         }
     };
 
-    log::info!(
-        "{}",
-        http_log_format!(remote_addr.ip(), req.uri(), "Request received.")
-    );
-
     if !remote_addr.ip().is_global() {
         log::info!(
             "{}",
             http_log_format!(
                 remote_addr.ip(),
+                String::from("-"),
                 req.uri(),
-                "Incoming ip is in the same network. Security middlewares will be by-passed."
+                "Request received from the same network. Security middlewares will be by-passed."
             )
         );
 
         match (req.method(), req.uri().path()) {
             (&Method::GET, "/") => return get_healthcheck().await,
-            (&Method::GET, "/ip-status") => return get_ip_status_list(cfg).await,
-            (&Method::POST, "/ip-status") => return post_ip_status(cfg, req).await,
+            (&Method::GET, "/address-status") => return get_address_status_list(cfg).await,
+            (&Method::POST, "/address-status") => return post_address_status(cfg, req).await,
             _ => {}
         };
     };
@@ -261,6 +265,7 @@ async fn router(
                 "{}",
                 http_log_format!(
                     remote_addr.ip(),
+                    String::from("-"),
                     req_path,
                     "Recieved invalid http payload, returning 401."
                 )
@@ -269,6 +274,16 @@ async fn router(
         }
     };
 
+    log::info!(
+        "{}",
+        http_log_format!(
+            remote_addr.ip(),
+            payload.signed_message.address,
+            req_path,
+            "Request received."
+        )
+    );
+
     let x_forwarded_for: HeaderValue = match remote_addr.ip().to_string().parse() {
         Ok(t) => t,
         Err(_) => {
@@ -276,6 +291,7 @@ async fn router(
                 "{}",
                 http_log_format!(
                     remote_addr.ip(),
+                    payload.signed_message.address,
                     req_path,
                     "Error type casting of IpAddr into HeaderValue, returning 500."
                 )
@@ -290,12 +306,20 @@ async fn router(
 
     let mut db = Db::create_instance(cfg).await;
 
-    match db.read_ip_status(remote_addr.ip().to_string()).await {
-        IpStatus::Trusted => proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await,
-        IpStatus::Blocked => {
+    match db
+        .read_address_status(payload.signed_message.address.clone())
+        .await
+    {
+        AddressStatus::Trusted => proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await,
+        AddressStatus::Blocked => {
             log::warn!(
                 "{}",
-                http_log_format!(remote_addr.ip(), req_path, "Request blocked.")
+                http_log_format!(
+                    remote_addr.ip(),
+                    payload.signed_message.address,
+                    req_path,
+                    "Request blocked."
+                )
             );
             response_by_status(StatusCode::FORBIDDEN)
         }
@@ -307,6 +331,7 @@ async fn router(
                     "{}",
                     http_log_format!(
                         remote_addr.ip(),
+                        payload.signed_message.address,
                         req_path,
                         "Request has invalid signed message, returning 401."
                     )
@@ -316,7 +341,7 @@ async fn router(
             };
 
             match db
-                .rate_exceeded(remote_addr.ip().to_string(), &cfg.rate_limiter)
+                .rate_exceeded(payload.signed_message.address.clone(), &cfg.rate_limiter)
                 .await
             {
                 Ok(false) => {}
@@ -325,6 +350,7 @@ async fn router(
                         "{}",
                         http_log_format!(
                             remote_addr.ip(),
+                            payload.signed_message.address,
                             req_path,
                             "Rate exceed, checking balance for {} address.",
                             payload.signed_message.address
@@ -338,6 +364,7 @@ async fn router(
                                 "{}",
                                 http_log_format!(
                                     remote_addr.ip(),
+                                    payload.signed_message.address,
                                     req_path,
                                     "Wallet {} has insufficient balance, returning 406.",
                                     payload.signed_message.address
@@ -350,6 +377,7 @@ async fn router(
                                 "{}",
                                 http_log_format!(
                                     remote_addr.ip(),
+                                    payload.signed_message.address,
                                     req_path,
                                     "verify_message_and_balance failed: {:?}",
                                     e
@@ -361,10 +389,19 @@ async fn router(
                 }
             }
 
-            if db.rate_ip(remote_addr.ip().to_string()).await.is_err() {
+            if db
+                .rate_address(payload.signed_message.address.clone())
+                .await
+                .is_err()
+            {
                 log::error!(
                     "{}",
-                    http_log_format!(remote_addr.ip(), req_path, "Rate incrementing failed.")
+                    http_log_format!(
+                        remote_addr.ip(),
+                        payload.signed_message.address,
+                        req_path,
+                        "Rate incrementing failed."
+                    )
                 );
             };
 
