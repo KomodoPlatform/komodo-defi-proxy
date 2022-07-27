@@ -22,8 +22,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
 macro_rules! http_log_format {
-  ($ip: expr, $address: expr, $path: expr, $format: expr, $($args: tt)+) => {format!(concat!("[Ip: {} | Pubkey: {} | Path: {}] ", $format), $ip, $address, $path, $($args)+)};
-  ($ip: expr, $address: expr, $path: expr, $format: expr) => {format!(concat!("[Ip: {} | Pubkey: {} | Path: {}] ", $format), $ip, $address, $path)}
+  ($ip: expr, $address: expr, $path: expr, $format: expr, $($args: tt)+) => {format!(concat!("[Ip: {} | Address: {} | Path: {}] ", $format), $ip, $address, $path, $($args)+)};
+  ($ip: expr, $address: expr, $path: expr, $format: expr) => {format!(concat!("[Ip: {} | Pubkey: {} | Address: {}] ", $format), $ip, $address, $path)}
 }
 
 impl AppConfig {
