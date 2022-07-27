@@ -55,8 +55,8 @@ Expose configuration file's path as an environment variable in `AUTH_APP_CONFIG_
 1) Instead of requesting to the Authenticated service with secure token, mm2 client sends the same request(without auth token) but to our service.
 
 2) At the beginning, request will be handled by the middleware with:
-   - Status Checker: Checks the IP address status if it's blocked, allowed, or trusted(means bypass rate-limiter and proof of funding & trading).
-   - Rate Limiter: Calculates the request count with specific time interval, if the IP address sent too many request than expected, then returns `429 Too Many Requests`. Otherwise, continues the process.
+   - Status Checker: Checks the wallet address status if it's blocked, allowed, or trusted(means bypass rate-limiter and proof of funding & trading).
+   - Rate Limiter: Calculates the request count with specific time interval, if the wallet address sent too many request than expected, then returns `429 Too Many Requests`. Otherwise, continues the process.
    - Proof of Funding & Trading: Does validation processes(like checking coin balance) using signed message.
 
 3) Generates secure JWT token using RS algorithm or uses existing token from Redis and adds that token into incoming request's header.
