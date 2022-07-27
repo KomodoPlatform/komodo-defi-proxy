@@ -4,6 +4,7 @@ use http::RpcPayload;
 use rpc::Json;
 use serde_json::json;
 use sign::SignOps;
+use crate::ctx::Node;
 
 #[derive(Debug)]
 pub(crate) enum ProofOfFundingError {
@@ -43,4 +44,43 @@ pub(crate) async fn verify_message_and_balance(
     }
 
     Err(ProofOfFundingError::InvalidSignedMessage)
+}
+
+#[test]
+fn test_proof_of_funding() {
+    use crate::ctx::get_app_config_test_instance;
+    use crate::sign::SignedMessage;
+
+    let mut cfg = get_app_config_test_instance();
+    cfg.nodes = vec![Node {
+        name: "ETH".to_string(),
+        url: "http://eth1.cipig.net:8555".to_string(),
+        authorized: false
+    }];
+
+    let mut signed_message = SignedMessage {
+        address: String::from("0x0000000000000000000000000000000000000000"),
+        timestamp_message: 1974527831,
+        signature: String::new(),
+        coin_ticker: String::from("ETH"),
+    };
+
+    let random_key = secp256k1::SecretKey::new(&mut secp256k1::rand::thread_rng());
+
+    let key_pair = ethkey::KeyPair::from_secret_slice(
+        random_key.as_ref(),
+    )
+        .unwrap();
+    
+    signed_message.sign_message(key_pair.secret()).unwrap();
+    
+    let payload = RpcPayload {
+        method: "".to_string(),
+        params: Default::default(),
+        id: 0,
+        jsonrpc: "".to_string(),
+        signed_message
+    };
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(verify_message_and_balance(&cfg, &payload)).unwrap();
 }
