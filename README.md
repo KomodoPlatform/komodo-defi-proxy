@@ -52,15 +52,24 @@ Expose configuration file's path as an environment variable in `AUTH_APP_CONFIG_
 ![2022-05-25_09-44](https://user-images.githubusercontent.com/39852038/170197519-005732b5-b8b6-44f7-99df-ab1294f8ae21.png)
 
 **Execution flow:**
-1) Instead of requesting to the Authenticated service with secure token, mm2 client sends the same request(without auth token) but to our service.
+1) Client sends the request.
 
-2) At the beginning, request will be handled by the middleware with:
-   - Status Checker: Checks the wallet address status if it's blocked, allowed, or trusted(means bypass rate-limiter and proof of funding & trading).
-   - Rate Limiter: Calculates the request count with specific time interval, if the wallet address sent too many request than expected, then returns `429 Too Many Requests`. Otherwise, continues the process.
-   - Proof of Funding & Trading: Does validation processes(like checking coin balance) using signed message.
+2) If the incoming request comes from the same network, step 3 will be by-passed.
 
-3) Generates secure JWT token using RS algorithm or uses existing token from Redis and adds that token into incoming request's header.
+3) Request will be handled in the middleware with:
+   - Status Checker: Checks if the wallet address status is blocked, allowed, or trusted and does the following:
+   	- Blocked: Return `403 Forbidden` immediately
+	- Allowed: process continues with the rate limiter
+	- Trusted: bypass rate limiter and proof of funding
+   - Rate Limiter: Calculate the request count with time interval specified in the application configuration. If the wallet address sent too many request than expected, process continues with the proof of funding. Otherwise, by-passes the proof of funding. Too Many Requests`. Otherwise, continues the process.
+   - Proof of Funding: Return `406 Not Acceptable` if wallet has 0 balance. Otherwise, process continues with the proxy router.
 
-4) Find the related route by current endpoint(like if current requested endpoint is '/ethereum-node' then go to 'blabla.quiknode.pro/blabla')
+4) Find target route by requested endpoint
 
-5) Proxy the incoming request to the target route and returns what target route returns.
+5) Check if requested rpc call is allowed in application configuration
+
+6) Generate JWT token with RSA algorithm using pub-priv keys specified in the application configuration, and insert the token to the request header.
+
+7) Drop hop headers.
+
+8) Send request to the target route, then return the same response to the client.
