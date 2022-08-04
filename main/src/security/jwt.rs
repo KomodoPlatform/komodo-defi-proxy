@@ -71,6 +71,41 @@ pub(crate) async fn generate_jwt(cfg: &AppConfig, claims: &JwtClaims) -> Generic
     )?)
 }
 
+pub(crate) async fn get_cached_token_or_generate_one(
+    cfg: &AppConfig,
+    claims: &JwtClaims,
+) -> GenericResult<String> {
+    let mut conn = get_redis_connection(cfg).await;
+
+    let db_result: Option<String> = redis::cmd("GET")
+        .arg("jwt-token")
+        .query_async(&mut conn)
+        .await?;
+
+    match db_result {
+        Some(token) => Ok(token),
+        None => Ok(generate_jwt_and_cache_it(cfg, claims).await?),
+    }
+}
+
+pub(crate) async fn generate_jwt_and_cache_it(
+    cfg: &AppConfig,
+    claims: &JwtClaims,
+) -> GenericResult<String> {
+    let token = generate_jwt(cfg, claims).await?;
+
+    let mut conn = get_redis_connection(cfg).await;
+    redis::cmd("SET")
+        .arg(&["jwt-token", &token])
+        .arg("EX")
+        .arg(cfg.token_expiration_time() - 60) // expire 60 seconds before token's expiration
+        .arg("NX")
+        .query_async(&mut conn)
+        .await?;
+
+    Ok(token)
+}
+
 #[allow(dead_code)]
 async fn validate_jwt(cfg: &AppConfig, token: String) -> bool {
     let mut validation = Validation::new(Algorithm::RS256);
@@ -169,7 +204,7 @@ async fn test_generate_jwt() {
     let claims = JwtClaims {
         iat: u64::default(),
         nbf: u64::default(),
-        exp: cfg.token_expiration_time.unwrap() as u64,
+        exp: cfg.token_expiration_time() as u64,
         iss: String::from(TOKEN_ISSUER),
     };
 
@@ -178,7 +213,7 @@ async fn test_generate_jwt() {
     assert_eq!(token, expected_token);
 
     // Test if validate_jwt works as expected
-    let claims = JwtClaims::new(cfg.token_expiration_time.unwrap());
+    let claims = JwtClaims::new(cfg.token_expiration_time());
     let token = generate_jwt(&cfg, &claims).await.unwrap();
     assert!(validate_jwt(&cfg, String::from(token)).await);
 }

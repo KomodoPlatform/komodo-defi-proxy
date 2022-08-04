@@ -12,7 +12,7 @@ use hyper::{
     Body, HeaderMap, Method, Request, Response, Server, StatusCode,
 };
 use hyper_tls::HttpsConnector;
-use jwt::{generate_jwt, JwtClaims};
+use jwt::{get_cached_token_or_generate_one, JwtClaims};
 use proof_of_funding::{verify_message_and_balance, ProofOfFundingError};
 use rate_limiter::RateLimitOperations;
 use serde::{Deserialize, Serialize};
@@ -61,8 +61,8 @@ pub(crate) async fn insert_jwt_to_http_header(
     cfg: &AppConfig,
     headers: &mut HeaderMap<HeaderValue>,
 ) -> GenericResult<()> {
-    let claims = &JwtClaims::new(cfg.token_expiration_time.unwrap_or(3600));
-    let auth_token = generate_jwt(cfg, claims).await?;
+    let claims = &JwtClaims::new(cfg.token_expiration_time());
+    let auth_token = get_cached_token_or_generate_one(cfg, claims).await?;
     headers.insert(
         header::AUTHORIZATION,
         format!("Bearer {}", auth_token).parse()?,
@@ -301,7 +301,7 @@ async fn router(
     };
 
     if !remote_addr.ip().is_global() {
-        return proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await;
+        // return proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await;
     }
 
     let mut db = Db::create_instance(cfg).await;

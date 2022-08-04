@@ -3,6 +3,7 @@ use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::env;
 
+const DEFAULT_TOKEN_EXPIRATION_TIME: i64 = 3600;
 static CONFIG: OnceCell<AppConfig> = OnceCell::new();
 
 pub(crate) fn get_app_config() -> &'static AppConfig {
@@ -56,6 +57,11 @@ impl AppConfig {
 
     pub(crate) fn get_node(&self, ticker: String) -> Option<&Node> {
         (&self.nodes).iter().find(|node| node.name == ticker)
+    }
+
+    pub(crate) fn token_expiration_time(&self) -> i64 {
+        self.token_expiration_time
+            .unwrap_or(DEFAULT_TOKEN_EXPIRATION_TIME)
     }
 }
 
