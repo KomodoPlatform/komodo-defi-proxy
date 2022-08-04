@@ -301,7 +301,7 @@ async fn router(
     };
 
     if !remote_addr.ip().is_global() {
-        // return proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await;
+        return proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await;
     }
 
     let mut db = Db::create_instance(cfg).await;
