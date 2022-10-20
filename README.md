@@ -73,3 +73,29 @@ Expose configuration file's path as an environment variable in `AUTH_APP_CONFIG_
 7) Drop hop headers.
 
 8) Send request to the target route, then return the same response to the client.
+
+### Example Request
+
+```sh
+curl -v --url "'$mm2_address'" -s --data '{
+	"userpass": "'$userpass'",
+	"mmrpc": "2.0",
+	"method": "enable_eth_with_tokens",
+	"params": {
+		"ticker": "ETH",
+		"nodes": [
+			{"url": "'$atomicdex_gui_auth_address'", "gui_auth": true }
+		],
+		"swap_contract_address": "0x24ABE4c71FC658C91313b6552cd40cD808b3Ea80",
+		"erc20_tokens_requests": [
+			{
+				"ticker": "USDC-ERC20"
+			},
+			{
+				"ticker": "SHIB-ERC20"
+			}
+		]
+	},
+	"id": 0
+}'
+```
