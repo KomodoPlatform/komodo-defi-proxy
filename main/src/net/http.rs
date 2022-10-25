@@ -51,6 +51,13 @@ async fn get_healthcheck() -> GenericResult<Response<Body>> {
         .body(Body::from(json.to_string()))?)
 }
 
+fn handle_preflight() -> GenericResult<Response<Body>> {
+    Ok(Response::builder()
+        .status(StatusCode::NO_CONTENT)
+        .header("Allow", "OPTIONS, POST")
+        .body(Body::from(Vec::new()))?)
+}
+
 pub(crate) fn response_by_status(status: StatusCode) -> GenericResult<Response<Body>> {
     Ok(Response::builder()
         .status(status)
@@ -256,6 +263,10 @@ async fn router(
             _ => {}
         };
     };
+
+    if req.method() == Method::OPTIONS {
+        return handle_preflight();
+    }
 
     let req_path = req.uri().clone();
     let (req, payload) = match parse_payload(req).await {
