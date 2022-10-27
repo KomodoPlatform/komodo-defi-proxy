@@ -47,6 +47,9 @@ async fn get_healthcheck() -> GenericResult<Response<Body>> {
 
     Ok(Response::builder()
         .status(StatusCode::OK)
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Allow-Headers", "*")
+        .header("Access-Control-Allow-Methods", "POST, OPTIONS")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json.to_string()))?)
 }
@@ -54,13 +57,18 @@ async fn get_healthcheck() -> GenericResult<Response<Body>> {
 fn handle_preflight() -> GenericResult<Response<Body>> {
     Ok(Response::builder()
         .status(StatusCode::NO_CONTENT)
-        .header("Allow", "OPTIONS, POST")
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Allow-Headers", "*")
+        .header("Access-Control-Allow-Methods", "POST, OPTIONS")
         .body(Body::from(Vec::new()))?)
 }
 
 pub(crate) fn response_by_status(status: StatusCode) -> GenericResult<Response<Body>> {
     Ok(Response::builder()
         .status(status)
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Allow-Headers", "*")
+        .header("Access-Control-Allow-Methods", "POST, OPTIONS")
         .body(Body::from(Vec::new()))?)
 }
 
