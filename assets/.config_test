@@ -25,12 +25,12 @@
 	},
 	"nodes": [
 		{
-			"name": "ETH",
+			"coins": ["ETH"],
 			"url": "https://dummy-address",
 			"authorized": false
 		},
 		{
-			"name": "KMD",
+			"coins": ["KMD"],
 			"url": "https://dummy-address2",
 			"authorized": false
 		}

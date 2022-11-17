@@ -36,7 +36,7 @@ Create the configuration file for app runtime.
 	},
 	"nodes": [
 		{
-			"name": "ETH",
+			"coins": ["ETH"],
 			"url": "https://xyz.com/096ed97e0b1342b4b33",
 			"authorized": false
 		}

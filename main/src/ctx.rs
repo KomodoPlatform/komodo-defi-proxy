@@ -42,7 +42,7 @@ pub(crate) struct RateLimiter {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Node {
-    pub(crate) name: String,
+    pub(crate) coins: Vec<String>,
     pub(crate) url: String,
     pub(crate) authorized: bool,
 }
@@ -56,7 +56,9 @@ impl AppConfig {
     }
 
     pub(crate) fn get_node(&self, ticker: String) -> Option<&Node> {
-        (&self.nodes).iter().find(|node| node.name == ticker)
+        (&self.nodes)
+            .iter()
+            .find(|node| node.coins.contains(&ticker))
     }
 
     pub(crate) fn token_expiration_time(&self) -> i64 {
@@ -94,12 +96,12 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
         },
         nodes: Vec::from([
             ctx::Node {
-                name: String::from("ETH"),
+                coins: vec![String::from("ETH")],
                 url: String::from("https://dummy-address"),
                 authorized: false,
             },
             ctx::Node {
-                name: String::from("KMD"),
+                coins: vec![String::from("KMD")],
                 url: String::from("https://dummy-address2"),
                 authorized: false,
             },
@@ -136,12 +138,12 @@ fn test_app_config_serialzation_and_deserialization() {
         },
         "nodes": [
             {
-                "name": "ETH",
+                "coins": ["ETH"],
                 "url": "https://dummy-address",
                 "authorized": false,
             },
             {
-                "name": "KMD",
+                "coins": ["KMD"],
                 "url": "https://dummy-address2",
                 "authorized": false,
             }
@@ -173,10 +175,10 @@ fn test_get_node() {
     let cfg = get_app_config_test_instance();
 
     let node = cfg.get_node(String::from("ETH")).unwrap();
-    assert_eq!(node.name, "ETH");
+    assert!(node.coins.contains(&"ETH".into()));
     assert_eq!(node.url, "https://dummy-address");
 
     let node = cfg.get_node(String::from("KMD")).unwrap();
-    assert_eq!(node.name, "KMD");
+    assert!(node.coins.contains(&"KMD".into()));
     assert_eq!(node.url, "https://dummy-address2");
 }
