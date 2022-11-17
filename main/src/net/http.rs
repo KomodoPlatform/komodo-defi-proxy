@@ -359,8 +359,13 @@ async fn router(
                 return response_by_status(StatusCode::UNAUTHORIZED);
             };
 
+            let rate_limiter_key = format!(
+                "{}:{}",
+                payload.signed_message.coin_ticker, payload.signed_message.address
+            );
+
             match db
-                .rate_exceeded(payload.signed_message.address.clone(), &cfg.rate_limiter)
+                .rate_exceeded(rate_limiter_key.clone(), &cfg.rate_limiter)
                 .await
             {
                 Ok(false) => {}
@@ -371,7 +376,8 @@ async fn router(
                             remote_addr.ip(),
                             payload.signed_message.address,
                             req_path,
-                            "Rate exceed, checking balance for {} address.",
+                            "Rate exceed on coin {}, checking balance for {} address.",
+                            payload.signed_message.coin_ticker,
                             payload.signed_message.address
                         )
                     );
@@ -385,7 +391,8 @@ async fn router(
                                     remote_addr.ip(),
                                     payload.signed_message.address,
                                     req_path,
-                                    "Wallet {} has insufficient balance, returning 406.",
+                                    "Wallet {} has insufficient balance for coin {}, returning 406.",
+                                    payload.signed_message.coin_ticker,
                                     payload.signed_message.address
                                 )
                             );
@@ -398,7 +405,8 @@ async fn router(
                                     remote_addr.ip(),
                                     payload.signed_message.address,
                                     req_path,
-                                    "verify_message_and_balance failed: {:?}",
+                                    "verify_message_and_balance failed in coin {}: {:?}",
+                                    payload.signed_message.coin_ticker,
                                     e
                                 )
                             );
@@ -408,11 +416,7 @@ async fn router(
                 }
             }
 
-            if db
-                .rate_address(payload.signed_message.address.clone())
-                .await
-                .is_err()
-            {
+            if db.rate_address(rate_limiter_key).await.is_err() {
                 log::error!(
                     "{}",
                     http_log_format!(
