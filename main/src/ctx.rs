@@ -41,13 +41,6 @@ pub(crate) struct RateLimiter {
     pub(crate) rp_60_min: u16,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub(crate) struct Node {
-    pub(crate) coins: Vec<String>,
-    pub(crate) url: String,
-    pub(crate) authorized: bool,
-}
-
 impl AppConfig {
     fn from_fs() -> GenericResult<Self> {
         let config_path =
