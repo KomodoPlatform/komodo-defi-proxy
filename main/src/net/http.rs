@@ -1,4 +1,5 @@
 use super::*;
+
 use address_status::{
     get_address_status_list, post_address_status, AddressStatus, AddressStatusOperations,
 };
@@ -204,7 +205,7 @@ async fn proxy(
         }
     };
 
-    return Ok(res);
+    Ok(res)
 }
 
 #[allow(dead_code)]
@@ -328,7 +329,7 @@ async fn router(
             &remote_addr,
             payload,
             x_forwarded_for,
-            &proxy_route,
+            proxy_route,
         )
         .await;
     }
@@ -346,7 +347,7 @@ async fn router(
                 &remote_addr,
                 payload,
                 x_forwarded_for,
-                &proxy_route,
+                proxy_route,
             )
             .await
         }
@@ -364,7 +365,7 @@ async fn router(
         }
         _ => {
             let signed_message_status =
-                verify_message_and_balance(cfg, &payload, &proxy_route).await;
+                verify_message_and_balance(cfg, &payload, proxy_route).await;
 
             if let Err(ProofOfFundingError::InvalidSignedMessage) = signed_message_status {
                 log::warn!(
@@ -403,7 +404,7 @@ async fn router(
                         )
                     );
 
-                    match verify_message_and_balance(cfg, &payload, &proxy_route).await {
+                    match verify_message_and_balance(cfg, &payload, proxy_route).await {
                         Ok(_) => {}
                         Err(ProofOfFundingError::InsufficientBalance) => {
                             log::warn!(
@@ -455,7 +456,7 @@ async fn router(
                 &remote_addr,
                 payload,
                 x_forwarded_for,
-                &proxy_route,
+                proxy_route,
             )
             .await
         }
