@@ -21,6 +21,7 @@ pub(crate) async fn get_redis_connection(cfg: &AppConfig) -> MultiplexedConnecti
     client
         .get_multiplexed_tokio_connection()
         .await
+        .map_err(|e| e.to_string())
         .expect("Couldn't get connection from redis client.")
 }
 
