@@ -8,11 +8,13 @@
 		{
 			"inbound_route": "/test",
 			"outbound_route": "https://komodoplatform.com",
+			"authorized": false,
 			"allowed_methods": []
 		},
 		{
 			"inbound_route": "/test-2",
 			"outbound_route": "https://atomicdex.io",
+			"authorized": false,
 			"allowed_methods": []
 		}
 	],
@@ -22,17 +24,5 @@
 		"rp_15_min": 555,
 		"rp_30_min": 555,
 		"rp_60_min": 555
-	},
-	"nodes": [
-		{
-			"coins": ["ETH"],
-			"url": "https://dummy-address",
-			"authorized": false
-		},
-		{
-			"coins": ["KMD"],
-			"url": "https://dummy-address2",
-			"authorized": false
-		}
-	]
+	}
 }

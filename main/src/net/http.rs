@@ -1,4 +1,5 @@
 use super::*;
+
 use address_status::{
     get_address_status_list, post_address_status, AddressStatus, AddressStatusOperations,
 };
@@ -110,115 +111,101 @@ async fn proxy(
     remote_addr: &SocketAddr,
     payload: RpcPayload,
     x_forwarded_for: HeaderValue,
+    proxy_route: &ProxyRoute,
 ) -> GenericResult<Response<Body>> {
-    let proxy_route = cfg.get_proxy_route_by_inbound(req.uri().to_string());
+    // check if requested method allowed
+    if !proxy_route.allowed_methods.contains(&payload.method) {
+        log::warn!(
+            "{}",
+            http_log_format!(
+                remote_addr.ip(),
+                payload.signed_message.address,
+                req.uri(),
+                "Method {} not allowed for, returning 403.",
+                payload.method
+            )
+        );
+        return response_by_status(StatusCode::FORBIDDEN);
+    }
 
-    if let Some(proxy_route) = proxy_route {
-        // check if requested method allowed
-        if !proxy_route.allowed_methods.contains(&payload.method) {
-            log::warn!(
-                "{}",
-                http_log_format!(
-                    remote_addr.ip(),
-                    payload.signed_message.address,
-                    req.uri(),
-                    "Method {} not allowed for, returning 403.",
-                    payload.method
-                )
-            );
-            return response_by_status(StatusCode::FORBIDDEN);
-        }
+    // modify outgoing request
+    if insert_jwt_to_http_header(cfg, req.headers_mut())
+        .await
+        .is_err()
+    {
+        log::error!(
+            "{}",
+            http_log_format!(
+                remote_addr.ip(),
+                payload.signed_message.address,
+                req.uri(),
+                "Error inserting JWT into http header, returning 500."
+            )
+        );
+        return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+    }
 
-        // modify outgoing request
-        if insert_jwt_to_http_header(cfg, req.headers_mut())
-            .await
-            .is_err()
-        {
+    let original_req_uri = req.uri().clone();
+    *req.uri_mut() = match proxy_route.outbound_route.parse() {
+        Ok(uri) => uri,
+        Err(_) => {
             log::error!(
                 "{}",
                 http_log_format!(
                     remote_addr.ip(),
                     payload.signed_message.address,
-                    req.uri(),
-                    "Error inserting JWT into http header, returning 500."
+                    original_req_uri,
+                    "Error type casting value of {} into Uri, returning 500.",
+                    proxy_route.outbound_route
                 )
             );
             return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
         }
+    };
 
-        let original_req_uri = req.uri().clone();
-        *req.uri_mut() = match proxy_route.outbound_route.parse() {
-            Ok(uri) => uri,
-            Err(_) => {
-                log::error!(
-                    "{}",
-                    http_log_format!(
-                        remote_addr.ip(),
-                        payload.signed_message.address,
-                        original_req_uri,
-                        "Error type casting value of {} into Uri, returning 500.",
-                        proxy_route.outbound_route
-                    )
-                );
-                return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-        };
-
-        // drop hop headers
-        for key in &[
-            header::ACCEPT_ENCODING,
-            header::CONNECTION,
-            header::HOST,
-            header::PROXY_AUTHENTICATE,
-            header::PROXY_AUTHORIZATION,
-            header::TE,
-            header::TRANSFER_ENCODING,
-            header::TRAILER,
-            header::UPGRADE,
-            header::HeaderName::from_static("keep-alive"),
-        ] {
-            req.headers_mut().remove(key);
-        }
-
-        req.headers_mut()
-            .insert(HeaderName::from_static("x-forwarded-for"), x_forwarded_for);
-        req.headers_mut()
-            .insert(header::CONTENT_TYPE, "application/json".parse()?);
-
-        let https = HttpsConnector::new();
-        let client = hyper::Client::builder().build(https);
-
-        let target_uri = req.uri().clone();
-        let res = match client.request(req).await {
-            Ok(t) => t,
-            Err(_) => {
-                log::warn!(
-                    "{}",
-                    http_log_format!(
-                        remote_addr.ip(),
-                        payload.signed_message.address,
-                        original_req_uri,
-                        "Couldn't reach {}, returning 503.",
-                        target_uri
-                    )
-                );
-                return response_by_status(StatusCode::SERVICE_UNAVAILABLE);
-            }
-        };
-
-        return Ok(res);
+    // drop hop headers
+    for key in &[
+        header::ACCEPT_ENCODING,
+        header::CONNECTION,
+        header::HOST,
+        header::PROXY_AUTHENTICATE,
+        header::PROXY_AUTHORIZATION,
+        header::TE,
+        header::TRANSFER_ENCODING,
+        header::TRAILER,
+        header::UPGRADE,
+        header::HeaderName::from_static("keep-alive"),
+    ] {
+        req.headers_mut().remove(key);
     }
 
-    log::warn!(
-        "{}",
-        http_log_format!(
-            remote_addr.ip(),
-            payload.signed_message.address,
-            req.uri(),
-            "Proxy route not found, returning 404."
-        )
-    );
-    response_by_status(StatusCode::NOT_FOUND)
+    req.headers_mut()
+        .insert(HeaderName::from_static("x-forwarded-for"), x_forwarded_for);
+    req.headers_mut()
+        .insert(header::CONTENT_TYPE, "application/json".parse()?);
+
+    let https = HttpsConnector::new();
+    let client = hyper::Client::builder().build(https);
+
+    let target_uri = req.uri().clone();
+    let res = match client.request(req).await {
+        Ok(t) => t,
+        Err(_) => {
+            log::warn!(
+                "{}",
+                http_log_format!(
+                    remote_addr.ip(),
+                    payload.signed_message.address,
+                    original_req_uri,
+                    "Couldn't reach {}, returning 503.",
+                    target_uri
+                )
+            );
+            return response_by_status(StatusCode::SERVICE_UNAVAILABLE);
+        }
+    };
+
+    Ok(res)
 }
 
 #[allow(dead_code)]
@@ -319,8 +306,32 @@ async fn router(
         }
     };
 
+    let proxy_route = match cfg.get_proxy_route_by_inbound(req.uri().to_string()) {
+        Some(proxy_route) => proxy_route,
+        None => {
+            log::warn!(
+                "{}",
+                http_log_format!(
+                    remote_addr.ip(),
+                    payload.signed_message.address,
+                    req.uri(),
+                    "Proxy route not found, returning 404."
+                )
+            );
+            return response_by_status(StatusCode::NOT_FOUND);
+        }
+    };
+
     if !remote_addr.ip().is_global() {
-        return proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await;
+        return proxy(
+            cfg,
+            req,
+            &remote_addr,
+            payload,
+            x_forwarded_for,
+            proxy_route,
+        )
+        .await;
     }
 
     let mut db = Db::create_instance(cfg).await;
@@ -329,7 +340,17 @@ async fn router(
         .read_address_status(payload.signed_message.address.clone())
         .await
     {
-        AddressStatus::Trusted => proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await,
+        AddressStatus::Trusted => {
+            proxy(
+                cfg,
+                req,
+                &remote_addr,
+                payload,
+                x_forwarded_for,
+                proxy_route,
+            )
+            .await
+        }
         AddressStatus::Blocked => {
             log::warn!(
                 "{}",
@@ -343,7 +364,8 @@ async fn router(
             response_by_status(StatusCode::FORBIDDEN)
         }
         _ => {
-            let signed_message_status = verify_message_and_balance(cfg, &payload).await;
+            let signed_message_status =
+                verify_message_and_balance(cfg, &payload, proxy_route).await;
 
             if let Err(ProofOfFundingError::InvalidSignedMessage) = signed_message_status {
                 log::warn!(
@@ -382,7 +404,7 @@ async fn router(
                         )
                     );
 
-                    match verify_message_and_balance(cfg, &payload).await {
+                    match verify_message_and_balance(cfg, &payload, proxy_route).await {
                         Ok(_) => {}
                         Err(ProofOfFundingError::InsufficientBalance) => {
                             log::warn!(
@@ -428,7 +450,15 @@ async fn router(
                 );
             };
 
-            proxy(cfg, req, &remote_addr, payload, x_forwarded_for).await
+            proxy(
+                cfg,
+                req,
+                &remote_addr,
+                payload,
+                x_forwarded_for,
+                proxy_route,
+            )
+            .await
         }
     }
 }

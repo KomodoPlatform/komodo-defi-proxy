@@ -1,4 +1,5 @@
 use super::*;
+
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -21,13 +22,13 @@ pub(crate) struct AppConfig {
     pub(crate) token_expiration_time: Option<i64>,
     pub(crate) proxy_routes: Vec<ProxyRoute>,
     pub(crate) rate_limiter: RateLimiter,
-    pub(crate) nodes: Vec<Node>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct ProxyRoute {
     pub(crate) inbound_route: String,
     pub(crate) outbound_route: String,
+    pub(crate) authorized: bool,
     pub(crate) allowed_methods: Vec<String>,
 }
 
@@ -40,25 +41,12 @@ pub(crate) struct RateLimiter {
     pub(crate) rp_60_min: u16,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub(crate) struct Node {
-    pub(crate) coins: Vec<String>,
-    pub(crate) url: String,
-    pub(crate) authorized: bool,
-}
-
 impl AppConfig {
     fn from_fs() -> GenericResult<Self> {
         let config_path =
             env::var("AUTH_APP_CONFIG_PATH").expect("AUTH_APP_CONFIG_PATH must be defined.");
         let file = std::fs::read_to_string(config_path)?;
         Ok(serde_json::from_str(&file)?)
-    }
-
-    pub(crate) fn get_node(&self, ticker: String) -> Option<&Node> {
-        (&self.nodes)
-            .iter()
-            .find(|node| node.coins.contains(&ticker))
     }
 
     pub(crate) fn token_expiration_time(&self) -> i64 {
@@ -79,11 +67,13 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
             ProxyRoute {
                 inbound_route: String::from("/test"),
                 outbound_route: String::from("https://komodoplatform.com"),
+                authorized: false,
                 allowed_methods: Vec::default(),
             },
             ProxyRoute {
                 inbound_route: String::from("/test-2"),
                 outbound_route: String::from("https://atomicdex.io"),
+                authorized: false,
                 allowed_methods: Vec::default(),
             },
         ]),
@@ -94,18 +84,6 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
             rp_30_min: 555,
             rp_60_min: 555,
         },
-        nodes: Vec::from([
-            ctx::Node {
-                coins: vec![String::from("ETH")],
-                url: String::from("https://dummy-address"),
-                authorized: false,
-            },
-            ctx::Node {
-                coins: vec![String::from("KMD")],
-                url: String::from("https://dummy-address2"),
-                authorized: false,
-            },
-        ]),
     }
 }
 
@@ -121,11 +99,13 @@ fn test_app_config_serialzation_and_deserialization() {
             {
                 "inbound_route": "/test",
                 "outbound_route": "https://komodoplatform.com",
+                "authorized": false,
                 "allowed_methods": []
             },
             {
                 "inbound_route": "/test-2",
                 "outbound_route": "https://atomicdex.io",
+                "authorized": false,
                 "allowed_methods": []
             }
         ],
@@ -135,19 +115,7 @@ fn test_app_config_serialzation_and_deserialization() {
             "rp_15_min": 555,
             "rp_30_min": 555,
             "rp_60_min": 555
-        },
-        "nodes": [
-            {
-                "coins": ["ETH"],
-                "url": "https://dummy-address",
-                "authorized": false,
-            },
-            {
-                "coins": ["KMD"],
-                "url": "https://dummy-address2",
-                "authorized": false,
-            }
-        ]
+        }
     });
 
     let actual_config: AppConfig = serde_json::from_str(&json_config.to_string()).unwrap();
@@ -168,17 +136,4 @@ fn test_from_fs() {
     let actual = AppConfig::from_fs().unwrap();
     let expected = get_app_config_test_instance();
     assert_eq!(actual, expected);
-}
-
-#[test]
-fn test_get_node() {
-    let cfg = get_app_config_test_instance();
-
-    let node = cfg.get_node(String::from("ETH")).unwrap();
-    assert!(node.coins.contains(&"ETH".into()));
-    assert_eq!(node.url, "https://dummy-address");
-
-    let node = cfg.get_node(String::from("KMD")).unwrap();
-    assert!(node.coins.contains(&"KMD".into()));
-    assert_eq!(node.url, "https://dummy-address2");
 }
