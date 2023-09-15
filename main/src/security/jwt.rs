@@ -216,5 +216,5 @@ async fn test_generate_jwt() {
     // Test if validate_jwt works as expected
     let claims = JwtClaims::new(cfg.token_expiration_time());
     let token = generate_jwt(&cfg, &claims).await.unwrap();
-    assert!(validate_jwt(&cfg, String::from(token)).await);
+    assert!(validate_jwt(&cfg, token).await);
 }
