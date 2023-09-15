@@ -38,6 +38,7 @@ impl Db {
 }
 
 impl Db {
+    #[allow(dead_code)]
     pub(crate) async fn key_exists(&mut self, key: &str) -> GenericResult<bool> {
         Ok(redis::cmd("EXISTS")
             .arg(key)
