@@ -48,7 +48,9 @@ impl RateLimitOperations for Db {
                 .cmd("EXPIRE")
                 .arg(db)
                 .arg(expire_time)
-                .arg("XX");
+                .arg("XX")
+                .query_async(&mut self.connection)
+                .await?;
         } else {
             pipe.cmd("HINCRBY")
                 .arg(db)
@@ -56,7 +58,9 @@ impl RateLimitOperations for Db {
                 .cmd("EXPIRE")
                 .arg(db)
                 .arg(expire_time)
-                .arg("XX");
+                .arg("XX")
+                .query_async(&mut self.connection)
+                .await?;
         }
 
         Ok(())
