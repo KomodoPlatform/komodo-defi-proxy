@@ -306,10 +306,10 @@ fn test_message_sign_and_verify() {
     )
     .unwrap();
 
-    signed_message.sign_message(&key_pair.secret()).unwrap();
+    signed_message.sign_message(key_pair.secret()).unwrap();
     assert!(!signed_message.verify_message().unwrap());
 
     signed_message.timestamp_message = timestamp_message + 5 * 60;
-    signed_message.sign_message(&key_pair.secret()).unwrap();
+    signed_message.sign_message(key_pair.secret()).unwrap();
     assert!(signed_message.verify_message().unwrap());
 }
