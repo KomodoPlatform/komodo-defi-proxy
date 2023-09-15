@@ -43,18 +43,20 @@ impl RateLimitOperations for Db {
         address: &str,
         expire_time: usize,
     ) -> GenericResult<()> {
-        let field_exists: bool = pipe
-            .hexists(db, address)
-            .query_async(&mut self.connection)
-            .await?;
-
-        if field_exists {
+        if !self.key_exists(db).await? {
+            pipe.hset(db, address, "1")
+                .cmd("EXPIRE")
+                .arg(db)
+                .arg(expire_time)
+                .arg("XX");
+        } else {
             pipe.cmd("HINCRBY")
                 .arg(db)
                 .arg(&[address, "1"])
-                .expire(db, expire_time);
-        } else {
-            pipe.hset(db, address, "1").expire(db, expire_time);
+                .cmd("EXPIRE")
+                .arg(db)
+                .arg(expire_time)
+                .arg("XX");
         }
 
         Ok(())
