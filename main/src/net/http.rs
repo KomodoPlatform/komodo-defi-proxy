@@ -398,8 +398,8 @@ async fn router(
                             remote_addr.ip(),
                             payload.signed_message.address,
                             req_path,
-                            "Rate exceed on coin {}, checking balance for {} address.",
-                            payload.signed_message.coin_ticker,
+                            "Rate exceed for {}, checking balance for {} address.",
+                            rate_limiter_key,
                             payload.signed_message.address
                         )
                     );
