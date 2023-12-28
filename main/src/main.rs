@@ -10,6 +10,8 @@ mod ctx;
 mod db;
 #[path = "net/http.rs"]
 mod http;
+#[path = "net/websocket.rs"]
+mod websocket;
 #[path = "security/jwt.rs"]
 mod jwt;
 #[path = "security/proof_of_funding.rs"]
@@ -34,7 +36,7 @@ async fn main() -> GenericResult<()> {
 
     let cfg = get_app_config();
     // to panic if redis is not available
-    get_redis_connection(cfg).await;
+    // get_redis_connection(cfg).await;
 
     serve(cfg).await
 }
