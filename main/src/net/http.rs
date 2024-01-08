@@ -1,3 +1,5 @@
+use crate::websocket::{spawn_proxy, is_websocket_req};
+
 use super::*;
 
 use address_status::{
@@ -239,6 +241,10 @@ async fn router(
             return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
+
+    if is_websocket_req(&req) {
+        spawn_proxy("TODO").await.unwrap();
+    }
 
     if !remote_addr.ip().is_global() {
         log::info!(

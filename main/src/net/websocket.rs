@@ -1,11 +1,17 @@
 use std::time::Duration;
 
 use futures_util::{FutureExt, SinkExt, StreamExt};
+use hyper::{header::HeaderValue, Body, Request};
 use log::{error, info};
 use tokio::{io, net::TcpListener, sync, time};
 use tokio_tungstenite::tungstenite::Message;
 
-async fn spawn_proxy(_addr: &str) -> io::Result<()> {
+pub(crate) fn is_websocket_req(req: &Request<Body>) -> bool {
+    let expected = HeaderValue::from_static("websocket");
+    Some(&expected) == req.headers().get("upgrade")
+}
+
+pub(crate) async fn spawn_proxy(_addr: &str) -> io::Result<()> {
     let (tx, _) = sync::broadcast::channel(10);
 
     let bind_addr = "127.0.0.1:6678";
