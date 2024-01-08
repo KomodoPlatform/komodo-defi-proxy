@@ -1,6 +1,6 @@
-use crate::websocket::{spawn_proxy, is_websocket_req};
-
 use super::*;
+
+use crate::websocket::{is_websocket_req, spawn_proxy};
 
 use address_status::{
     get_address_status_list, post_address_status, AddressStatus, AddressStatusOperations,
@@ -245,8 +245,10 @@ async fn router(
     if is_websocket_req(&req) {
         // TODO
         // Spawn it
-        spawn_proxy("TODO").await.unwrap();
+        return spawn_proxy(req).await;
     }
+
+    let req_uri = req.uri().clone();
 
     if !remote_addr.ip().is_global() {
         log::info!(
@@ -259,7 +261,7 @@ async fn router(
             )
         );
 
-        match (req.method(), req.uri().path()) {
+        match (req.method(), req_uri.path()) {
             (&Method::GET, "/") => return get_healthcheck().await,
             (&Method::GET, "/address-status") => return get_address_status_list(cfg).await,
             (&Method::POST, "/address-status") => return post_address_status(cfg, req).await,
@@ -271,7 +273,6 @@ async fn router(
         return handle_preflight();
     }
 
-    let req_path = req.uri().clone();
     let (req, payload) = match parse_payload(req).await {
         Ok(t) => t,
         Err(_) => {
@@ -280,7 +281,7 @@ async fn router(
                 http_log_format!(
                     remote_addr.ip(),
                     String::from("-"),
-                    req_path,
+                    req_uri,
                     "Recieved invalid http payload, returning 401."
                 )
             );
@@ -293,7 +294,7 @@ async fn router(
         http_log_format!(
             remote_addr.ip(),
             payload.signed_message.address,
-            req_path,
+            req_uri,
             "Request received."
         )
     );
@@ -306,7 +307,7 @@ async fn router(
                 http_log_format!(
                     remote_addr.ip(),
                     payload.signed_message.address,
-                    req_path,
+                    req_uri,
                     "Error type casting of IpAddr into HeaderValue, returning 500."
                 )
             );
@@ -365,7 +366,7 @@ async fn router(
                 http_log_format!(
                     remote_addr.ip(),
                     payload.signed_message.address,
-                    req_path,
+                    req_uri,
                     "Request blocked."
                 )
             );
@@ -381,7 +382,7 @@ async fn router(
                     http_log_format!(
                         remote_addr.ip(),
                         payload.signed_message.address,
-                        req_path,
+                        req_uri,
                         "Request has invalid signed message, returning 401."
                     )
                 );
@@ -405,7 +406,7 @@ async fn router(
                         http_log_format!(
                             remote_addr.ip(),
                             payload.signed_message.address,
-                            req_path,
+                            req_uri,
                             "Rate exceed for {}, checking balance for {} address.",
                             rate_limiter_key,
                             payload.signed_message.address
@@ -420,7 +421,7 @@ async fn router(
                                 http_log_format!(
                                     remote_addr.ip(),
                                     payload.signed_message.address,
-                                    req_path,
+                                    req_uri,
                                     "Wallet {} has insufficient balance for coin {}, returning 406.",
                                     payload.signed_message.coin_ticker,
                                     payload.signed_message.address
@@ -434,7 +435,7 @@ async fn router(
                                 http_log_format!(
                                     remote_addr.ip(),
                                     payload.signed_message.address,
-                                    req_path,
+                                    req_uri,
                                     "verify_message_and_balance failed in coin {}: {:?}",
                                     payload.signed_message.coin_ticker,
                                     e
@@ -452,7 +453,7 @@ async fn router(
                     http_log_format!(
                         remote_addr.ip(),
                         payload.signed_message.address,
-                        req_path,
+                        req_uri,
                         "Rate incrementing failed."
                     )
                 );
