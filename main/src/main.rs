@@ -10,8 +10,6 @@ mod ctx;
 mod db;
 #[path = "net/http.rs"]
 mod http;
-#[path = "net/websocket.rs"]
-mod websocket;
 #[path = "security/jwt.rs"]
 mod jwt;
 #[path = "security/proof_of_funding.rs"]
@@ -22,6 +20,8 @@ mod rate_limiter;
 mod rpc;
 #[path = "security/sign.rs"]
 mod sign;
+#[path = "net/websocket.rs"]
+mod websocket;
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[global_allocator]
