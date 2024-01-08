@@ -11,6 +11,10 @@ pub(crate) fn is_websocket_req(req: &Request<Body>) -> bool {
     Some(&expected) == req.headers().get("upgrade")
 }
 
+// TODO
+// Handle routing
+// Manage connection pools (clean up memory once disconnected from the client)
+// rename this function
 pub(crate) async fn spawn_proxy(_addr: &str) -> io::Result<()> {
     let (tx, _) = sync::broadcast::channel(10);
 
