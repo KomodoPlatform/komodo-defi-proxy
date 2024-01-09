@@ -1,8 +1,9 @@
+use std::net::{IpAddr, SocketAddr};
+use std::str::FromStr;
+
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
-use std::net::{IpAddr, SocketAddr};
-use std::str::FromStr;
 
 use crate::http::{http_handler, response_by_status};
 use crate::log_format;

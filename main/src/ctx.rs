@@ -1,8 +1,9 @@
-use super::*;
+use std::env;
 
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use std::env;
+
+use super::*;
 
 const DEFAULT_TOKEN_EXPIRATION_TIME: i64 = 3600;
 static CONFIG: OnceCell<AppConfig> = OnceCell::new();

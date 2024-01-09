@@ -1,6 +1,4 @@
-use crate::server::is_private_ip;
-
-use super::*;
+use std::net::SocketAddr;
 
 use address_status::{
     get_address_status_list, post_address_status, AddressStatus, AddressStatusOperations,
@@ -19,7 +17,9 @@ use rate_limiter::RateLimitOperations;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sign::SignedMessage;
-use std::net::SocketAddr;
+
+use super::*;
+use crate::server::is_private_ip;
 
 async fn get_healthcheck() -> GenericResult<Response<Body>> {
     let json = json!({

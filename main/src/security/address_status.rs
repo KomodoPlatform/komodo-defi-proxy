@@ -1,5 +1,3 @@
-use super::*;
-
 use async_trait::async_trait;
 use bytes::Buf;
 use ctx::AppConfig;
@@ -7,6 +5,8 @@ use db::Db;
 use hyper::{header, Body, Request, Response, StatusCode};
 use redis::FromRedisValue;
 use serde::{Deserialize, Serialize};
+
+use super::*;
 
 pub(crate) const DB_STATUS_LIST: &str = "status_list";
 

@@ -1,13 +1,14 @@
-use super::*;
+use core::{convert::From, str::FromStr};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use bitcrypto::keccak256;
-use core::{convert::From, str::FromStr};
 use ethereum_types::{Address, H256};
 use ethkey::{sign, verify_address, Secret, Signature};
 use serde::{Deserialize, Serialize};
 use serialization::{CompactInteger, Serializable, Stream};
 use sha3::{Digest, Keccak256};
-use std::time::{SystemTime, UNIX_EPOCH};
+
+use super::*;
 
 pub(crate) trait SignOps {
     fn sign_message_hash(&self) -> [u8; 32];

@@ -1,10 +1,10 @@
-use super::*;
-
 use ctx::{AppConfig, ProxyRoute};
 use http::RpcPayload;
 use rpc::Json;
 use serde_json::json;
 use sign::SignOps;
+
+use super::*;
 
 #[derive(Debug)]
 pub(crate) enum ProofOfFundingError {

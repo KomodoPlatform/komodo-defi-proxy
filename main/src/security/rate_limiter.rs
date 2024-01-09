@@ -1,9 +1,9 @@
-use super::*;
-
 use async_trait::async_trait;
 use ctx::RateLimiter;
 use db::Db;
 use redis::Pipeline;
+
+use super::*;
 
 pub(crate) const DB_RP_1_MIN: &str = "rp:1_min";
 pub(crate) const DB_RP_5_MIN: &str = "rp:5_min";
