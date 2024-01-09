@@ -58,6 +58,7 @@ impl SignOps for SignedMessage {
         let hash = hasher.finalize();
         let mut result: String = "0x".into();
         for (i, c) in addr.chars().enumerate() {
+            #[allow(clippy::is_digit_ascii_radix)]
             if c.is_digit(10) {
                 result.push(c);
             } else {

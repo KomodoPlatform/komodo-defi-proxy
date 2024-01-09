@@ -94,7 +94,7 @@ impl RateLimitOperations for Db {
     ) -> GenericResult<bool> {
         let rate: u16 = redis::cmd("HGET")
             .arg(db)
-            .arg(&address)
+            .arg(address)
             .query_async(&mut self.connection)
             .await
             .unwrap_or(0);

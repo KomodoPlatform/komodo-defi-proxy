@@ -2,7 +2,7 @@
 
 use ctx::get_app_config;
 use db::get_redis_connection;
-use http::serve;
+use server::serve;
 
 #[path = "security/address_status.rs"]
 mod address_status;
@@ -18,6 +18,8 @@ mod proof_of_funding;
 mod rate_limiter;
 #[path = "net/rpc.rs"]
 mod rpc;
+#[path = "net/server.rs"]
+mod server;
 #[path = "security/sign.rs"]
 mod sign;
 #[path = "net/websocket.rs"]

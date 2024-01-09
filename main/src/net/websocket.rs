@@ -1,31 +1,46 @@
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 
 use futures_util::{FutureExt, SinkExt, StreamExt};
-use hyper::{header::HeaderValue, upgrade, Body, Request, Response};
-use log::{error, info};
-use tokio::{io, net::TcpListener, sync, time};
+use hyper::{header::HeaderValue, upgrade, Body, Request, Response, StatusCode};
+use tokio::time;
 use tokio_tungstenite::{
-    tungstenite::{handshake, Error, Message},
+    tungstenite::{handshake, Message},
     WebSocketStream,
 };
 
-use crate::GenericResult;
+use crate::{ctx::AppConfig, http::response_by_status, log_format, GenericResult};
 
-pub(crate) fn is_websocket_req(req: &Request<Body>) -> bool {
+pub(crate) fn should_upgrade_to_socket_conn(req: &Request<Body>) -> bool {
     let expected = HeaderValue::from_static("websocket");
     Some(&expected) == req.headers().get("upgrade")
 }
 
-// TODO
-// Handle routing
-// Manage connection pools (clean up memory once disconnected from the client)
-// rename this function
-pub(crate) async fn spawn_proxy(mut req: Request<Body>) -> GenericResult<Response<Body>> {
-    let _inbound_route = req.uri().clone();
+pub(crate) async fn socket_handler(
+    cfg: &AppConfig,
+    mut req: Request<Body>,
+    remote_addr: SocketAddr,
+) -> GenericResult<Response<Body>> {
+    let inbound_route = req.uri().to_string();
+    let proxy_route = match cfg.get_proxy_route_by_inbound(inbound_route) {
+        Some(proxy_route) => proxy_route,
+        None => {
+            log::warn!(
+                "{}",
+                log_format!(
+                    remote_addr.ip(),
+                    String::from("-"),
+                    req.uri(),
+                    "Proxy route not found for socket, returning 404."
+                )
+            );
+            return response_by_status(StatusCode::NOT_FOUND);
+        }
+    };
 
-    let outbound_addr = "wss://necessary-quaint-road.ethereum-sepolia.quiknode.pro/3173295b7544258f98517fac5bdaa8d02349594a";
-    let response = match handshake::server::create_response_with_body(&req, || Body::empty()) {
-        Ok(response) => {
+    let outbound_addr = proxy_route.outbound_route.clone();
+
+    match handshake::server::create_response_with_body(&req, Body::empty) {
+        Ok(_) => {
             tokio::spawn(async move {
                 match upgrade::on(&mut req).await {
                     Ok(upgraded) => {
@@ -73,21 +88,36 @@ pub(crate) async fn spawn_proxy(mut req: Request<Body>) -> GenericResult<Respons
                                 }
                             }
                             e => {
-                                panic!("{e:?}");
+                                log::error!(
+                                    "{}",
+                                    log_format!(
+                                        remote_addr.ip(),
+                                        String::from("-"),
+                                        req.uri(),
+                                        "{:?}",
+                                        e
+                                    )
+                                );
                             }
                         };
                     }
-                    Err(e) => println!("TODO"),
+                    Err(e) => {
+                        log::error!(
+                            "{}",
+                            log_format!(remote_addr.ip(), String::from("-"), req.uri(), "{}", e)
+                        );
+                    }
                 }
             });
 
-            response
+            response_by_status(StatusCode::SERVICE_UNAVAILABLE)
         }
-        Err(error) => {
-            // TODO
-            panic!("{error:?}")
+        Err(e) => {
+            log::error!(
+                "{}",
+                log_format!(remote_addr.ip(), String::from("-"), req.uri(), "{}", e)
+            );
+            response_by_status(StatusCode::SERVICE_UNAVAILABLE)
         }
-    };
-
-    Ok(response)
+    }
 }
