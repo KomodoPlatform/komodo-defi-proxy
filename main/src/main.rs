@@ -36,7 +36,7 @@ async fn main() -> GenericResult<()> {
 
     let cfg = get_app_config();
     // to panic if redis is not available
-    // get_redis_connection(cfg).await;
+    get_redis_connection(cfg).await;
 
     serve(cfg).await
 }
