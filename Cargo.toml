@@ -2,3 +2,5 @@
 members = [
 	"main",
 ]
+
+resolver = "2"

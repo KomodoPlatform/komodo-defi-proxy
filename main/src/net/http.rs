@@ -1,3 +1,5 @@
+use crate::server::is_private_ip;
+
 use super::*;
 
 use address_status::{
@@ -193,7 +195,9 @@ pub(crate) async fn http_handler(
 ) -> GenericResult<Response<Body>> {
     let req_uri = req.uri().clone();
 
-    if !remote_addr.ip().is_global() {
+    let is_private_ip = is_private_ip(&remote_addr.ip());
+
+    if is_private_ip {
         log::info!(
             "{}",
             log_format!(
@@ -274,7 +278,7 @@ pub(crate) async fn http_handler(
         }
     };
 
-    if !remote_addr.ip().is_global() {
+    if is_private_ip {
         return proxy(
             cfg,
             req,

@@ -1,5 +1,3 @@
-#![feature(ip)]
-
 use ctx::get_app_config;
 use db::get_redis_connection;
 use server::serve;
