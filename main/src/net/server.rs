@@ -18,7 +18,7 @@ macro_rules! log_format {
 
 pub(crate) fn is_private_ip(ip: &IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => v4.is_private(),
+        IpAddr::V4(v4) => v4.is_private() || v4.is_loopback(),
         // We don't support IPv6s yet
         IpAddr::V6(_) => false,
     }

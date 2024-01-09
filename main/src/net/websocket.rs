@@ -40,7 +40,7 @@ pub(crate) async fn socket_handler(
     let outbound_addr = proxy_route.outbound_route.clone();
 
     match handshake::server::create_response_with_body(&req, Body::empty) {
-        Ok(_) => {
+        Ok(response) => {
             tokio::spawn(async move {
                 match upgrade::on(&mut req).await {
                     Ok(upgraded) => {
@@ -110,7 +110,7 @@ pub(crate) async fn socket_handler(
                 }
             });
 
-            response_by_status(StatusCode::SERVICE_UNAVAILABLE)
+            Ok(response)
         }
         Err(e) => {
             log::error!(
