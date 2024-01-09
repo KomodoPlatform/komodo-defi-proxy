@@ -59,29 +59,70 @@ pub(crate) async fn socket_handler(
                                 loop {
                                     futures_util::select! {
                                         _ = keepalive_interval.tick().fuse() => {
-                                            outbound_socket.send(Message::Ping(Vec::new())).await.unwrap();
-                                            inbound_socket.send(Message::Ping(Vec::new())).await.unwrap();
+                                            if let Err(e) = outbound_socket.send(Message::Ping(Vec::new())).await {
+                                                log::error!(
+                                                    "{}",
+                                                    log_format!(
+                                                        remote_addr.ip(),
+                                                        String::from("-"),
+                                                        req.uri(),
+                                                        "{:?}",
+                                                        e
+                                                    )
+                                                );
+                                            };
+
+                                            if let Err(e) = inbound_socket.send(Message::Ping(Vec::new())).await {
+                                                log::error!(
+                                                    "{}",
+                                                    log_format!(
+                                                        remote_addr.ip(),
+                                                        String::from("-"),
+                                                        req.uri(),
+                                                        "{:?}",
+                                                        e
+                                                    )
+                                                );
+                                            }
                                         }
 
                                         msg = outbound_socket.next() => {
                                             match msg {
                                                 Some(Ok(msg)) => {
-                                                    inbound_socket.send(msg).await.unwrap();
+                                                    if let Err(e) = inbound_socket.send(msg).await {
+                                                        log::error!(
+                                                            "{}",
+                                                            log_format!(
+                                                                remote_addr.ip(),
+                                                                String::from("-"),
+                                                                req.uri(),
+                                                                "{:?}",
+                                                                e
+                                                            )
+                                                        );
+                                                    };
                                                 },
-                                                _ => {
-                                                    break;
-                                                }
+                                                _ => break,
                                             };
                                         },
 
                                         msg = inbound_socket.next() => {
                                             match msg {
                                                 Some(Ok(msg)) => {
-                                                    outbound_socket.send(msg).await.unwrap();
+                                                    if let Err(e) = outbound_socket.send(msg).await {
+                                                        log::error!(
+                                                            "{}",
+                                                            log_format!(
+                                                                remote_addr.ip(),
+                                                                String::from("-"),
+                                                                req.uri(),
+                                                                "{:?}",
+                                                                e
+                                                            )
+                                                        );
+                                                    };
                                                 },
-                                                _ => {
-                                                    break;
-                                                }
+                                                _ => break
                                             };
                                         }
                                     };
