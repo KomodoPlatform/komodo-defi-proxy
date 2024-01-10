@@ -1,8 +1,8 @@
-use super::*;
-
 use ctx::AppConfig;
 use once_cell::sync::OnceCell;
 use redis::aio::MultiplexedConnection;
+
+use super::*;
 
 static REDIS_CLIENT: OnceCell<redis::Client> = OnceCell::new();
 

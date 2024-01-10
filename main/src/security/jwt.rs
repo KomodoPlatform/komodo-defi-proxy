@@ -1,14 +1,15 @@
-use super::*;
-
-use ctx::AppConfig;
-use jsonwebtoken::*;
-use once_cell::sync::OnceCell;
-use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::Read,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+use ctx::AppConfig;
+use jsonwebtoken::*;
+use once_cell::sync::OnceCell;
+use serde::{Deserialize, Serialize};
+
+use super::*;
 
 const TOKEN_ISSUER: &str = "ATOMICDEX-AUTH";
 

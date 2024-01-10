@@ -1,9 +1,9 @@
-use super::*;
-
 use async_trait::async_trait;
 use ctx::RateLimiter;
 use db::Db;
 use redis::Pipeline;
+
+use super::*;
 
 pub(crate) const DB_RP_1_MIN: &str = "rp:1_min";
 pub(crate) const DB_RP_5_MIN: &str = "rp:5_min";
@@ -94,7 +94,7 @@ impl RateLimitOperations for Db {
     ) -> GenericResult<bool> {
         let rate: u16 = redis::cmd("HGET")
             .arg(db)
-            .arg(&address)
+            .arg(address)
             .query_async(&mut self.connection)
             .await
             .unwrap_or(0);

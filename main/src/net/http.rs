@@ -1,4 +1,4 @@
-use super::*;
+use std::net::SocketAddr;
 
 use address_status::{
     get_address_status_list, post_address_status, AddressStatus, AddressStatusOperations,
@@ -6,11 +6,9 @@ use address_status::{
 use ctx::{AppConfig, ProxyRoute};
 use db::*;
 use hyper::header::HeaderName;
-use hyper::server::conn::AddrStream;
-use hyper::service::{make_service_fn, service_fn};
 use hyper::{
     header::{self, HeaderValue},
-    Body, HeaderMap, Method, Request, Response, Server, StatusCode,
+    Body, HeaderMap, Method, Request, Response, StatusCode,
 };
 use hyper_tls::HttpsConnector;
 use jwt::{get_cached_token_or_generate_one, JwtClaims};
@@ -19,27 +17,9 @@ use rate_limiter::RateLimitOperations;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sign::SignedMessage;
-use std::net::{IpAddr, SocketAddr};
-use std::str::FromStr;
 
-macro_rules! http_log_format {
-  ($ip: expr, $address: expr, $path: expr, $format: expr, $($args: tt)+) => {format!(concat!("[Ip: {} | Address: {} | Path: {}] ", $format), $ip, $address, $path, $($args)+)};
-  ($ip: expr, $address: expr, $path: expr, $format: expr) => {format!(concat!("[Ip: {} | Pubkey: {} | Address: {}] ", $format), $ip, $address, $path)}
-}
-
-impl AppConfig {
-    pub(crate) fn get_proxy_route_by_inbound(&self, inbound: String) -> Option<&ProxyRoute> {
-        let route_index = self.proxy_routes.iter().position(|r| {
-            r.inbound_route == inbound || r.inbound_route.to_owned() + "/" == inbound
-        });
-
-        if let Some(index) = route_index {
-            return Some(&self.proxy_routes[index]);
-        }
-
-        None
-    }
-}
+use super::*;
+use crate::server::is_private_ip;
 
 async fn get_healthcheck() -> GenericResult<Response<Body>> {
     let json = json!({
@@ -117,7 +97,7 @@ async fn proxy(
     if !proxy_route.allowed_methods.contains(&payload.method) {
         log::warn!(
             "{}",
-            http_log_format!(
+            log_format!(
                 remote_addr.ip(),
                 payload.signed_message.address,
                 req.uri(),
@@ -135,7 +115,7 @@ async fn proxy(
     {
         log::error!(
             "{}",
-            http_log_format!(
+            log_format!(
                 remote_addr.ip(),
                 payload.signed_message.address,
                 req.uri(),
@@ -151,7 +131,7 @@ async fn proxy(
         Err(_) => {
             log::error!(
                 "{}",
-                http_log_format!(
+                log_format!(
                     remote_addr.ip(),
                     payload.signed_message.address,
                     original_req_uri,
@@ -193,7 +173,7 @@ async fn proxy(
         Err(_) => {
             log::warn!(
                 "{}",
-                http_log_format!(
+                log_format!(
                     remote_addr.ip(),
                     payload.signed_message.address,
                     original_req_uri,
@@ -208,42 +188,19 @@ async fn proxy(
     Ok(res)
 }
 
-#[allow(dead_code)]
-fn get_real_address(req: &Request<Body>, remote_addr: &SocketAddr) -> GenericResult<SocketAddr> {
-    if let Some(ip) = req.headers().get("x-forwarded-for") {
-        let addr = IpAddr::from_str(ip.to_str()?)?;
-
-        return Ok(SocketAddr::new(addr, remote_addr.port()));
-    }
-
-    Ok(*remote_addr)
-}
-
-async fn router(
+pub(crate) async fn http_handler(
     cfg: &AppConfig,
     req: Request<Body>,
     remote_addr: SocketAddr,
 ) -> GenericResult<Response<Body>> {
-    let remote_addr = match get_real_address(&req, &remote_addr) {
-        Ok(t) => t,
-        _ => {
-            log::error!(
-                "{}",
-                http_log_format!(
-                    remote_addr.ip(),
-                    String::from("-"),
-                    req.uri(),
-                    "Reading real remote address failed, returning 500."
-                )
-            );
-            return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
+    let req_uri = req.uri().clone();
 
-    if !remote_addr.ip().is_global() {
+    let is_private_ip = is_private_ip(&remote_addr.ip());
+
+    if is_private_ip {
         log::info!(
             "{}",
-            http_log_format!(
+            log_format!(
                 remote_addr.ip(),
                 String::from("-"),
                 req.uri(),
@@ -251,7 +208,7 @@ async fn router(
             )
         );
 
-        match (req.method(), req.uri().path()) {
+        match (req.method(), req_uri.path()) {
             (&Method::GET, "/") => return get_healthcheck().await,
             (&Method::GET, "/address-status") => return get_address_status_list(cfg).await,
             (&Method::POST, "/address-status") => return post_address_status(cfg, req).await,
@@ -263,16 +220,15 @@ async fn router(
         return handle_preflight();
     }
 
-    let req_path = req.uri().clone();
     let (req, payload) = match parse_payload(req).await {
         Ok(t) => t,
         Err(_) => {
             log::warn!(
                 "{}",
-                http_log_format!(
+                log_format!(
                     remote_addr.ip(),
                     String::from("-"),
-                    req_path,
+                    req_uri,
                     "Recieved invalid http payload, returning 401."
                 )
             );
@@ -282,10 +238,10 @@ async fn router(
 
     log::info!(
         "{}",
-        http_log_format!(
+        log_format!(
             remote_addr.ip(),
             payload.signed_message.address,
-            req_path,
+            req_uri,
             "Request received."
         )
     );
@@ -295,10 +251,10 @@ async fn router(
         Err(_) => {
             log::error!(
                 "{}",
-                http_log_format!(
+                log_format!(
                     remote_addr.ip(),
                     payload.signed_message.address,
-                    req_path,
+                    req_uri,
                     "Error type casting of IpAddr into HeaderValue, returning 500."
                 )
             );
@@ -311,7 +267,7 @@ async fn router(
         None => {
             log::warn!(
                 "{}",
-                http_log_format!(
+                log_format!(
                     remote_addr.ip(),
                     payload.signed_message.address,
                     req.uri(),
@@ -322,7 +278,7 @@ async fn router(
         }
     };
 
-    if !remote_addr.ip().is_global() {
+    if is_private_ip {
         return proxy(
             cfg,
             req,
@@ -354,10 +310,10 @@ async fn router(
         AddressStatus::Blocked => {
             log::warn!(
                 "{}",
-                http_log_format!(
+                log_format!(
                     remote_addr.ip(),
                     payload.signed_message.address,
-                    req_path,
+                    req_uri,
                     "Request blocked."
                 )
             );
@@ -370,10 +326,10 @@ async fn router(
             if let Err(ProofOfFundingError::InvalidSignedMessage) = signed_message_status {
                 log::warn!(
                     "{}",
-                    http_log_format!(
+                    log_format!(
                         remote_addr.ip(),
                         payload.signed_message.address,
-                        req_path,
+                        req_uri,
                         "Request has invalid signed message, returning 401."
                     )
                 );
@@ -394,10 +350,10 @@ async fn router(
                 _ => {
                     log::warn!(
                         "{}",
-                        http_log_format!(
+                        log_format!(
                             remote_addr.ip(),
                             payload.signed_message.address,
-                            req_path,
+                            req_uri,
                             "Rate exceed for {}, checking balance for {} address.",
                             rate_limiter_key,
                             payload.signed_message.address
@@ -409,10 +365,10 @@ async fn router(
                         Err(ProofOfFundingError::InsufficientBalance) => {
                             log::warn!(
                                 "{}",
-                                http_log_format!(
+                                log_format!(
                                     remote_addr.ip(),
                                     payload.signed_message.address,
-                                    req_path,
+                                    req_uri,
                                     "Wallet {} has insufficient balance for coin {}, returning 406.",
                                     payload.signed_message.coin_ticker,
                                     payload.signed_message.address
@@ -423,10 +379,10 @@ async fn router(
                         e => {
                             log::error!(
                                 "{}",
-                                http_log_format!(
+                                log_format!(
                                     remote_addr.ip(),
                                     payload.signed_message.address,
-                                    req_path,
+                                    req_uri,
                                     "verify_message_and_balance failed in coin {}: {:?}",
                                     payload.signed_message.coin_ticker,
                                     e
@@ -441,10 +397,10 @@ async fn router(
             if db.rate_address(rate_limiter_key).await.is_err() {
                 log::error!(
                     "{}",
-                    http_log_format!(
+                    log_format!(
                         remote_addr.ip(),
                         payload.signed_message.address,
-                        req_path,
+                        req_uri,
                         "Rate incrementing failed."
                     )
                 );
@@ -461,21 +417,6 @@ async fn router(
             .await
         }
     }
-}
-
-pub(crate) async fn serve(cfg: &'static AppConfig) -> GenericResult<()> {
-    let addr = format!("0.0.0.0:{}", cfg.port.unwrap_or(5000)).parse()?;
-
-    let router = make_service_fn(move |c_stream: &AddrStream| {
-        let remote_addr = c_stream.remote_addr();
-        async move { Ok::<_, GenericError>(service_fn(move |req| router(cfg, req, remote_addr))) }
-    });
-
-    let server = Server::bind(&addr).serve(router);
-
-    log::info!("AtomicDEX Auth API serving on http://{}", addr);
-
-    Ok(server.await?)
 }
 
 #[test]
@@ -547,25 +488,6 @@ fn test_respond_by_status() {
         let res = response_by_status(status_type).unwrap();
         assert_eq!(res.status(), status_type);
     }
-}
-
-#[test]
-fn test_get_real_address() {
-    let mut req = Request::new(Body::from(Vec::new()));
-
-    let addr = IpAddr::from_str("127.0.0.1").unwrap();
-    let socket_addr = SocketAddr::new(addr, 80);
-
-    let remote_addr = get_real_address(&req, &socket_addr).unwrap();
-    assert_eq!("127.0.0.1", remote_addr.ip().to_string());
-
-    req.headers_mut().insert(
-        HeaderName::from_static("x-forwarded-for"),
-        "0.0.0.0".parse().unwrap(),
-    );
-
-    let remote_addr = get_real_address(&req, &socket_addr).unwrap();
-    assert_eq!("0.0.0.0", remote_addr.ip().to_string());
 }
 
 #[tokio::test]

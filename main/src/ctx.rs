@@ -1,8 +1,9 @@
-use super::*;
+use std::env;
 
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use std::env;
+
+use super::*;
 
 const DEFAULT_TOKEN_EXPIRATION_TIME: i64 = 3600;
 static CONFIG: OnceCell<AppConfig> = OnceCell::new();
@@ -28,7 +29,9 @@ pub(crate) struct AppConfig {
 pub(crate) struct ProxyRoute {
     pub(crate) inbound_route: String,
     pub(crate) outbound_route: String,
+    #[serde(default)]
     pub(crate) authorized: bool,
+    #[serde(default)]
     pub(crate) allowed_methods: Vec<String>,
 }
 
@@ -52,6 +55,18 @@ impl AppConfig {
     pub(crate) fn token_expiration_time(&self) -> i64 {
         self.token_expiration_time
             .unwrap_or(DEFAULT_TOKEN_EXPIRATION_TIME)
+    }
+
+    pub(crate) fn get_proxy_route_by_inbound(&self, inbound: String) -> Option<&ProxyRoute> {
+        let route_index = self.proxy_routes.iter().position(|r| {
+            r.inbound_route == inbound || r.inbound_route.to_owned() + "/" == inbound
+        });
+
+        if let Some(index) = route_index {
+            return Some(&self.proxy_routes[index]);
+        }
+
+        None
     }
 }
 
