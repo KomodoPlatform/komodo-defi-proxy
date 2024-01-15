@@ -1,6 +1,6 @@
 # Compilation
 FROM docker.io/library/debian:bullseye-slim as build
-WORKDIR /usr/src/atomicdex-gui-auth
+WORKDIR /usr/src/komodo-defi-proxy
 
 ## Install Rust
 RUN apt-get update \
@@ -25,7 +25,7 @@ RUN apt-get update \
 RUN update-ca-certificates
 
 ## Get binary
-COPY --from=build /usr/src/atomicdex-gui-auth/target/release/atomicdex-auth /usr/local/bin/
+COPY --from=build /usr/src/komodo-defi-proxy/target/release/atomicdex-auth /usr/local/bin/
 
 ## Init command
 CMD ["atomicdex-auth"]

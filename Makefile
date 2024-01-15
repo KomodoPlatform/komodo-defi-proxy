@@ -7,8 +7,8 @@ define container-tool
 	$(if $(_IF_PODMAN), podman, docker)
 endef
 
-IMAGE_TAG = atomicdex-gui-auth
-CONTAINER_NAME = atomicdex-gui-auth
+IMAGE_TAG = komodo-defi-proxy
+CONTAINER_NAME = komodo-defi-proxy
 
 container-build:
 	@echo Building production image
