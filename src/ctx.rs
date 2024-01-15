@@ -146,7 +146,7 @@ fn test_app_config_serialzation_and_deserialization() {
 
 #[test]
 fn test_from_fs() {
-    env::set_var("AUTH_APP_CONFIG_PATH", "../assets/.config_test");
+    env::set_var("AUTH_APP_CONFIG_PATH", "./assets/.config_test");
 
     let actual = AppConfig::from_fs().unwrap();
     let expected = get_app_config_test_instance();

@@ -156,7 +156,7 @@ fn test_jwt_claims_serialzation_and_deserialization() {
 
 #[tokio::test]
 async fn test_read_file_buffer() {
-    let bytes = read_file_buffer("../assets/.io_test");
+    let bytes = read_file_buffer("./assets/.io_test");
 
     #[cfg(not(target_os = "windows"))]
     assert_eq!(
@@ -193,8 +193,8 @@ async fn test_read_file_buffer() {
 #[tokio::test]
 async fn test_generate_jwt() {
     let mut cfg = ctx::get_app_config_test_instance();
-    cfg.privkey_path = String::from("../assets/.privkey_test");
-    cfg.pubkey_path = String::from("../assets/.pubkey_test");
+    cfg.privkey_path = String::from("./assets/.privkey_test");
+    cfg.pubkey_path = String::from("./assets/.pubkey_test");
 
     let buffer = read_file_buffer(&cfg.privkey_path);
     AUTH_ENCODING_KEY.get_or_init(|| EncodingKey::from_rsa_pem(&buffer).unwrap());
