@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [[bin]]
-name = "atomicdex-auth"
+name = "komodo-defi-proxy"
 path = "src/main.rs"
 
 [dependencies]

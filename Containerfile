@@ -25,7 +25,7 @@ RUN apt-get update \
 RUN update-ca-certificates
 
 ## Get binary
-COPY --from=build /usr/src/komodo-defi-proxy/target/release/atomicdex-auth /usr/local/bin/
+COPY --from=build /usr/src/komodo-defi-proxy/target/release/komodo-defi-proxy /usr/local/bin/
 
 ## Init command
-CMD ["atomicdex-auth"]
+CMD ["komodo-defi-proxy"]
