@@ -108,21 +108,23 @@ async fn proxy(
         return response_by_status(StatusCode::FORBIDDEN);
     }
 
-    // modify outgoing request
-    if insert_jwt_to_http_header(cfg, req.headers_mut())
-        .await
-        .is_err()
-    {
-        log::error!(
-            "{}",
-            log_format!(
-                remote_addr.ip(),
-                payload.signed_message.address,
-                req.uri(),
-                "Error inserting JWT into http header, returning 500."
-            )
-        );
-        return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+    if proxy_route.authorized {
+        // modify outgoing request
+        if insert_jwt_to_http_header(cfg, req.headers_mut())
+            .await
+            .is_err()
+        {
+            log::error!(
+                "{}",
+                log_format!(
+                    remote_addr.ip(),
+                    payload.signed_message.address,
+                    req.uri(),
+                    "Error inserting JWT into http header, returning 500."
+                )
+            );
+            return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+        }
     }
 
     let original_req_uri = req.uri().clone();

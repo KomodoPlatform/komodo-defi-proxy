@@ -4,11 +4,17 @@ use futures_util::{FutureExt, SinkExt, StreamExt};
 use hyper::{header::HeaderValue, upgrade, Body, Request, Response, StatusCode};
 use tokio::time;
 use tokio_tungstenite::{
-    tungstenite::{handshake, Message},
+    tungstenite::{client::IntoClientRequest, handshake, Message},
     WebSocketStream,
 };
 
-use crate::{ctx::AppConfig, http::response_by_status, log_format, GenericResult};
+use crate::{
+    ctx::AppConfig,
+    http::{response_by_status, RpcPayload},
+    log_format,
+    sign::SignOps,
+    GenericResult,
+};
 
 pub(crate) fn should_upgrade_to_socket_conn(req: &Request<Body>) -> bool {
     let expected = HeaderValue::from_static("websocket");
@@ -37,7 +43,31 @@ pub(crate) async fn socket_handler(
         }
     };
 
-    let outbound_addr = proxy_route.outbound_route.clone();
+    if !proxy_route.allowed_methods.is_empty() {
+        log::warn!("'allowed_methods' field is not supported on WebSocket nodes; values in that field will be ignored.");
+    }
+
+    let mut outbound_req = proxy_route.outbound_route.clone().into_client_request()?;
+
+    if proxy_route.authorized {
+        // modify outgoing request
+        if crate::http::insert_jwt_to_http_header(cfg, outbound_req.headers_mut())
+            .await
+            .is_err()
+        {
+            log::error!(
+                "{}",
+                log_format!(
+                    remote_addr.ip(),
+                    String::from("-"),
+                    req.uri(),
+                    "Proxy route not found for socket"
+                )
+            );
+
+            return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    }
 
     match handshake::server::create_response_with_body(&req, Body::empty) {
         Ok(response) => {
@@ -51,12 +81,13 @@ pub(crate) async fn socket_handler(
                         )
                         .await;
 
-                        match tokio_tungstenite::connect_async(outbound_addr).await {
+                        match tokio_tungstenite::connect_async(outbound_req).await {
                             Ok((mut outbound_socket, _)) => {
                                 let mut keepalive_interval =
                                     time::interval(Duration::from_secs(10));
 
                                 loop {
+                                    #[rustfmt::skip]
                                     futures_util::select! {
                                         _ = keepalive_interval.tick().fuse() => {
                                             if let Err(e) = outbound_socket.send(Message::Ping(Vec::new())).await {
@@ -109,7 +140,65 @@ pub(crate) async fn socket_handler(
                                         msg = inbound_socket.next() => {
                                             match msg {
                                                 Some(Ok(msg)) => {
-                                                    if let Err(e) = outbound_socket.send(msg).await {
+                                                    if let Message::Text(msg) = msg {
+                                                         let payload: RpcPayload = match serde_json::from_str(&msg) {
+                                                             Ok(t) => t,
+                                                             Err(e) => {
+                                                                 if let Err(e) = inbound_socket.send(format!("Invalid payload. {e}").into()).await {
+                                                                     log::error!(
+                                                                         "{}",
+                                                                         log_format!(
+                                                                             remote_addr.ip(),
+                                                                             String::from("-"),
+                                                                             req.uri(),
+                                                                             "{:?}",
+                                                                             e
+                                                                         )
+                                                                     );
+                                                                 };
+                                                                 continue;
+                                                             },
+                                                         };
+
+                                                         match payload.signed_message.verify_message() {
+                                                             Ok(true) => {
+                                                                 let msg = serde_json::json!({
+                                                                     "method": payload.method,
+                                                                     "params": payload.params,
+                                                                     "id": payload.id,
+                                                                     "jsonrpc": payload.jsonrpc
+                                                                 })
+                                                                 .to_string();
+
+                                                                 if let Err(e) = outbound_socket.send(msg.into()).await {
+                                                                     log::error!(
+                                                                         "{}",
+                                                                         log_format!(
+                                                                             remote_addr.ip(),
+                                                                             String::from("-"),
+                                                                             req.uri(),
+                                                                             "{:?}",
+                                                                             e
+                                                                         )
+                                                                     );
+                                                                 };
+                                                             },
+                                                             _ => {
+                                                                 if let Err(e) = inbound_socket.send("Signed message is not valid.".into()).await {
+                                                                     log::error!(
+                                                                         "{}",
+                                                                         log_format!(
+                                                                             remote_addr.ip(),
+                                                                             String::from("-"),
+                                                                             req.uri(),
+                                                                             "{:?}",
+                                                                             e
+                                                                         )
+                                                                     );
+                                                                 };
+                                                             }
+                                                         }
+                                                    } else if let Err(e) = outbound_socket.send(msg).await {
                                                         log::error!(
                                                             "{}",
                                                             log_format!(
@@ -120,7 +209,7 @@ pub(crate) async fn socket_handler(
                                                                 e
                                                             )
                                                         );
-                                                    };
+                                                    }
                                                 },
                                                 _ => break
                                             };

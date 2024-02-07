@@ -22,13 +22,13 @@ Create the configuration file for app runtime.
 			"inbound_route": "/dev",
 			"outbound_route": "http://localhost:8000",
 			"authorized": false,
-			"allowed_methods": [
+			"allowed_methods": [ // This field is not supported for websocket nodes
 				"eth_blockNumber",
 				"eth_gasPrice"
 			]
 		}
 	],
-	"rate_limiter": {
+	"rate_limiter": { // Rate limiter is not supported for websocket nodes
 		"rp_1_min": 30,
 		"rp_5_min": 100,
 		"rp_15_min": 200,
