@@ -22,7 +22,7 @@ Create the configuration file for app runtime.
 			"inbound_route": "/dev",
 			"outbound_route": "http://localhost:8000",
 			"authorized": false,
-			"allowed_methods": [ // This field is not supported for websocket nodes
+			"allowed_methods": [
 				"eth_blockNumber",
 				"eth_gasPrice"
 			]

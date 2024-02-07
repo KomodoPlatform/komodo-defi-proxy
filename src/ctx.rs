@@ -25,7 +25,7 @@ pub(crate) struct AppConfig {
     pub(crate) rate_limiter: RateLimiter,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct ProxyRoute {
     pub(crate) inbound_route: String,
     pub(crate) outbound_route: String,

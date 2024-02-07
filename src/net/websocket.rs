@@ -28,7 +28,7 @@ pub(crate) async fn socket_handler(
 ) -> GenericResult<Response<Body>> {
     let inbound_route = req.uri().to_string();
     let proxy_route = match cfg.get_proxy_route_by_inbound(inbound_route) {
-        Some(proxy_route) => proxy_route,
+        Some(proxy_route) => proxy_route.clone(),
         None => {
             log::warn!(
                 "{}",
@@ -42,10 +42,6 @@ pub(crate) async fn socket_handler(
             return response_by_status(StatusCode::NOT_FOUND);
         }
     };
-
-    if !proxy_route.allowed_methods.is_empty() {
-        log::warn!("'allowed_methods' field is not supported on WebSocket nodes; values in that field will be ignored.");
-    }
 
     let mut outbound_req = proxy_route.outbound_route.clone().into_client_request()?;
 
@@ -159,6 +155,24 @@ pub(crate) async fn socket_handler(
                                                                  continue;
                                                              },
                                                          };
+
+
+                                                        if !proxy_route.allowed_methods.contains(&payload.method) {
+                                                             if let Err(e) = inbound_socket.send("Method not allowed.".into()).await {
+                                                                 log::error!(
+                                                                     "{}",
+                                                                     log_format!(
+                                                                         remote_addr.ip(),
+                                                                         String::from("-"),
+                                                                         req.uri(),
+                                                                         "{:?}",
+                                                                         e
+                                                                     )
+                                                                 );
+                                                             };
+                                                             continue;
+                                                        }
+
 
                                                          match payload.signed_message.verify_message() {
                                                              Ok(true) => {
