@@ -3,10 +3,15 @@ use std::str::FromStr;
 
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server, StatusCode};
+use hyper::{Body, Request, Response, Server, StatusCode, Uri};
 
-use crate::http::{http_handler, response_by_status};
+use crate::address_status::AddressStatusOperations;
+use crate::ctx::ProxyRoute;
+use crate::db::Db;
+use crate::http::{http_handler, response_by_status, RpcPayload};
 use crate::log_format;
+use crate::proof_of_funding::{verify_message_and_balance, ProofOfFundingError};
+use crate::rate_limiter::RateLimitOperations;
 use crate::websocket::{should_upgrade_to_socket_conn, socket_handler};
 use crate::{ctx::AppConfig, GenericError, GenericResult};
 
@@ -56,9 +61,113 @@ async fn connection_handler(
     };
 
     if should_upgrade_to_socket_conn(&req) {
-        socket_handler(cfg, req, remote_addr).await
+        socket_handler(cfg.clone(), req, remote_addr).await
     } else {
         http_handler(cfg, req, remote_addr).await
+    }
+}
+
+pub(crate) async fn validation_middleware(
+    cfg: &AppConfig,
+    payload: &RpcPayload,
+    proxy_route: &ProxyRoute,
+    req_uri: &Uri,
+    remote_addr: &SocketAddr,
+) -> Result<(), StatusCode> {
+    let mut db = Db::create_instance(cfg).await;
+
+    match db
+        .read_address_status(&payload.signed_message.address)
+        .await
+    {
+        crate::address_status::AddressStatus::Trusted => Ok(()),
+        crate::address_status::AddressStatus::Blocked => Err(StatusCode::FORBIDDEN),
+        crate::address_status::AddressStatus::None => {
+            let signed_message_status = verify_message_and_balance(cfg, payload, proxy_route).await;
+
+            if let Err(ProofOfFundingError::InvalidSignedMessage) = signed_message_status {
+                log::warn!(
+                    "{}",
+                    log_format!(
+                        remote_addr.ip(),
+                        payload.signed_message.address,
+                        req_uri,
+                        "Request has invalid signed message, returning 401"
+                    )
+                );
+
+                return Err(StatusCode::UNAUTHORIZED);
+            };
+
+            let rate_limiter_key = format!(
+                "{}:{}",
+                payload.signed_message.coin_ticker, payload.signed_message.address
+            );
+
+            match db.rate_exceeded(&rate_limiter_key, &cfg.rate_limiter).await {
+                Ok(false) => {}
+                _ => {
+                    log::warn!(
+                        "{}",
+                        log_format!(
+                            remote_addr.ip(),
+                            payload.signed_message.address,
+                            req_uri,
+                            "Rate exceed for {}, checking balance for {} address.",
+                            rate_limiter_key,
+                            payload.signed_message.address
+                        )
+                    );
+
+                    match verify_message_and_balance(cfg, payload, proxy_route).await {
+                        Ok(_) => {}
+                        Err(ProofOfFundingError::InsufficientBalance) => {
+                            log::warn!(
+                                "{}",
+                                log_format!(
+                                    remote_addr.ip(),
+                                    payload.signed_message.address,
+                                    req_uri,
+                                    "Wallet {} has insufficient balance for coin {}, returning 406.",
+                                    payload.signed_message.coin_ticker,
+                                    payload.signed_message.address
+                                )
+                            );
+
+                            return Err(StatusCode::NOT_ACCEPTABLE);
+                        }
+                        e => {
+                            log::error!(
+                                "{}",
+                                log_format!(
+                                    remote_addr.ip(),
+                                    payload.signed_message.address,
+                                    req_uri,
+                                    "verify_message_and_balance failed in coin {}: {:?}",
+                                    payload.signed_message.coin_ticker,
+                                    e
+                                )
+                            );
+                            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                        }
+                    }
+                }
+            };
+
+            if db.rate_address(rate_limiter_key).await.is_err() {
+                log::error!(
+                    "{}",
+                    log_format!(
+                        remote_addr.ip(),
+                        payload.signed_message.address,
+                        req_uri,
+                        "Rate incrementing failed."
+                    )
+                );
+            };
+
+            Ok(())
+        }
     }
 }
 

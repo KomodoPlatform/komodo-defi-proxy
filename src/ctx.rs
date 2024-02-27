@@ -14,7 +14,7 @@ pub(crate) fn get_app_config() -> &'static AppConfig {
     })
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct AppConfig {
     pub(crate) port: Option<u16>,
     pub(crate) redis_connection_string: String,
@@ -35,7 +35,7 @@ pub(crate) struct ProxyRoute {
     pub(crate) allowed_methods: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct RateLimiter {
     pub(crate) rp_1_min: u16,
     pub(crate) rp_5_min: u16,

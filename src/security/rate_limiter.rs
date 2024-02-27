@@ -29,7 +29,7 @@ pub(crate) trait RateLimitOperations {
     ) -> GenericResult<bool>;
     async fn rate_exceeded(
         &mut self,
-        address: String,
+        address: &str,
         rate_limiter_conf: &RateLimiter,
     ) -> GenericResult<bool>;
 }
@@ -107,39 +107,39 @@ impl RateLimitOperations for Db {
 
     async fn rate_exceeded(
         &mut self,
-        address: String,
+        address: &str,
         rate_limit_conf: &RateLimiter,
     ) -> GenericResult<bool> {
         if self
-            .did_exceed_in_single_time_frame(DB_RP_1_MIN, &address, rate_limit_conf.rp_1_min)
+            .did_exceed_in_single_time_frame(DB_RP_1_MIN, address, rate_limit_conf.rp_1_min)
             .await?
         {
             return Ok(true);
         }
 
         if self
-            .did_exceed_in_single_time_frame(DB_RP_5_MIN, &address, rate_limit_conf.rp_5_min)
+            .did_exceed_in_single_time_frame(DB_RP_5_MIN, address, rate_limit_conf.rp_5_min)
             .await?
         {
             return Ok(true);
         }
 
         if self
-            .did_exceed_in_single_time_frame(DB_RP_15_MIN, &address, rate_limit_conf.rp_15_min)
+            .did_exceed_in_single_time_frame(DB_RP_15_MIN, address, rate_limit_conf.rp_15_min)
             .await?
         {
             return Ok(true);
         }
 
         if self
-            .did_exceed_in_single_time_frame(DB_RP_30_MIN, &address, rate_limit_conf.rp_30_min)
+            .did_exceed_in_single_time_frame(DB_RP_30_MIN, address, rate_limit_conf.rp_30_min)
             .await?
         {
             return Ok(true);
         }
 
         if self
-            .did_exceed_in_single_time_frame(DB_RP_60_MIN, &address, rate_limit_conf.rp_60_min)
+            .did_exceed_in_single_time_frame(DB_RP_60_MIN, address, rate_limit_conf.rp_60_min)
             .await?
         {
             return Ok(true);

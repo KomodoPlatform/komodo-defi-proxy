@@ -90,7 +90,7 @@ pub(crate) trait AddressStatusOperations {
         &mut self,
         payload: Vec<AddressStatusPayload>,
     ) -> GenericResult<()>;
-    async fn read_address_status(&mut self, address: String) -> AddressStatus;
+    async fn read_address_status(&mut self, address: &str) -> AddressStatus;
     async fn read_address_status_list(&mut self) -> Vec<(String, i8)>;
 }
 
@@ -123,7 +123,7 @@ impl AddressStatusOperations for Db {
         Ok(())
     }
 
-    async fn read_address_status(&mut self, address: String) -> AddressStatus {
+    async fn read_address_status(&mut self, address: &str) -> AddressStatus {
         redis::cmd("HGET")
             .arg(DB_STATUS_LIST)
             .arg(address)

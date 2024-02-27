@@ -12,7 +12,7 @@ use crate::{
     ctx::AppConfig,
     http::{response_by_status, RpcPayload},
     log_format,
-    sign::SignOps,
+    server::validation_middleware,
     GenericResult,
 };
 
@@ -22,7 +22,7 @@ pub(crate) fn should_upgrade_to_socket_conn(req: &Request<Body>) -> bool {
 }
 
 pub(crate) async fn socket_handler(
-    cfg: &AppConfig,
+    cfg: AppConfig,
     mut req: Request<Body>,
     remote_addr: SocketAddr,
 ) -> GenericResult<Response<Body>> {
@@ -47,7 +47,7 @@ pub(crate) async fn socket_handler(
 
     if proxy_route.authorized {
         // modify outgoing request
-        if crate::http::insert_jwt_to_http_header(cfg, outbound_req.headers_mut())
+        if crate::http::insert_jwt_to_http_header(&cfg, outbound_req.headers_mut())
             .await
             .is_err()
         {
@@ -173,9 +173,16 @@ pub(crate) async fn socket_handler(
                                                              continue;
                                                         }
 
-
-                                                         match payload.signed_message.verify_message() {
-                                                             Ok(true) => {
+                                                        match validation_middleware(
+                                                            &cfg,
+                                                            &payload,
+                                                            &proxy_route,
+                                                            req.uri(),
+                                                            &remote_addr,
+                                                        )
+                                                        .await
+                                                        {
+                                                             Ok(_) => {
                                                                  let msg = serde_json::json!({
                                                                      "method": payload.method,
                                                                      "params": payload.params,
@@ -196,9 +203,10 @@ pub(crate) async fn socket_handler(
                                                                          )
                                                                      );
                                                                  };
+
                                                              },
-                                                             _ => {
-                                                                 if let Err(e) = inbound_socket.send("Signed message is not valid.".into()).await {
+                                                             Err(status_code) => {
+                                                                 if let Err(e) = inbound_socket.send(format!("{status_code}").into()).await {
                                                                      log::error!(
                                                                          "{}",
                                                                          log_format!(
@@ -211,7 +219,7 @@ pub(crate) async fn socket_handler(
                                                                      );
                                                                  };
                                                              }
-                                                         }
+                                                        }
                                                     } else if let Err(e) = outbound_socket.send(msg).await {
                                                         log::error!(
                                                             "{}",

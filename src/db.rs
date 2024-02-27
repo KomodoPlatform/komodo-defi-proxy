@@ -35,14 +35,28 @@ impl Db {
             connection: get_redis_connection(cfg).await,
         }
     }
-}
 
-impl Db {
     #[allow(dead_code)]
     pub(crate) async fn key_exists(&mut self, key: &str) -> GenericResult<bool> {
         Ok(redis::cmd("EXISTS")
             .arg(key)
             .query_async(&mut self.connection)
             .await?)
+    }
+
+    pub(crate) async fn insert_cache(
+        &mut self,
+        key: &str,
+        value: &str,
+        seconds: usize,
+    ) -> GenericResult<()> {
+        redis::cmd("SETEX")
+            .arg(key)
+            .arg(seconds)
+            .arg(value)
+            .query_async(&mut self.connection)
+            .await?;
+
+        Ok(())
     }
 }
