@@ -29,6 +29,7 @@ pub(crate) struct SignedMessage {
 }
 
 impl SignOps for SignedMessage {
+    // TODO: include coin ticker in the message signing algorithm
     fn sign_message_hash(&self) -> [u8; 32] {
         let prefix = "atomicDEX Auth Ethereum Signed Message:\n";
         let mut stream = Stream::new();
@@ -108,6 +109,7 @@ impl SignOps for SignedMessage {
     fn verify_message(&self) -> GenericResult<bool> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
+        // TODO: we should also validate if the timestamp is too far from now.
         if now > self.timestamp_message {
             return Ok(false);
         }
