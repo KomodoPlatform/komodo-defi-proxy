@@ -44,7 +44,7 @@ Expose configuration file's path as an environment variable in `AUTH_APP_CONFIG_
 
 ### Architecture
 
-![arch](https://github.com/KomodoPlatform/komodo-defi-proxy/assets/39852038/2b02f6b6-95a3-4141-813f-5f18e9e72140)
+![arch2](https://github.com/KomodoPlatform/komodo-defi-proxy/assets/39852038/be7fe7ae-2f2a-4f68-afa8-ce4938c570a7)
 
 
 **Execution flow:**
