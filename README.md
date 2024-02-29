@@ -28,7 +28,7 @@ Create the configuration file for app runtime.
 			]
 		}
 	],
-	"rate_limiter": { // Rate limiter is not supported for websocket nodes
+	"rate_limiter": {
 		"rp_1_min": 30,
 		"rp_5_min": 100,
 		"rp_15_min": 200,
@@ -43,30 +43,34 @@ Expose configuration file's path as an environment variable in `AUTH_APP_CONFIG_
 ***Important Note:*** The environment where the application will be deployed, the timezone MUST be as UTC. Also, make sure redis is version `6.*`
 
 ### Architecture
-![2022-05-25_09-44](https://user-images.githubusercontent.com/39852038/170197519-005732b5-b8b6-44f7-99df-ab1294f8ae21.png)
+
+![arch](https://github.com/KomodoPlatform/komodo-defi-proxy/assets/39852038/2b02f6b6-95a3-4141-813f-5f18e9e72140)
+
 
 **Execution flow:**
 1) Client sends the request.
 
-2) If the incoming request comes from the same network, step 3 will be by-passed.
+2) Redirect either to websocket or http handler.
 
-3) Request will be handled in the middleware with:
+3) If the incoming request comes from the same network, step 4 will be by-passed.
+
+4) Request will be handled in the middleware with:
    - Status Checker: Checks if the wallet address status is blocked, allowed, or trusted and does the following:
    	- Blocked: Return `403 Forbidden` immediately
 	- Allowed: process continues with the rate limiter
 	- Trusted: bypass rate limiter and proof of funding
-   - Rate Limiter: Calculate the request count with time interval specified in the application configuration. If the wallet address sent too many request than expected, process continues with the proof of funding. Otherwise, by-passes the proof of funding. Too Many Requests`. Otherwise, continues the process.
-   - Proof of Funding: Return `406 Not Acceptable` if wallet has 0 balance. Otherwise, process continues with the proxy router.
+   - Rate Limiter: First, verify the signed message, and if not valid, return 401 Unauthorized immediately. If valid, then calculate the request count with time interval specified in the application configuration. If the wallet address sent too many request than the expected amount, process continues with the proof of funding. If not, by-passes the proof of funding.
+   - Proof of Funding: Return `406 Not Acceptable` if wallet has 0 balance. Otherwise, we assume that request is valid and process continues as usual.
 
-4) Find target route by requested endpoint
+5) Find target route by requested endpoint
 
-5) Check if requested rpc call is allowed in application configuration
+6) Check if requested rpc call is allowed in application configuration
 
-6) Generate JWT token with RSA algorithm using pub-priv keys specified in the application configuration, and insert the token to the request header.
+7) Generate JWT token with RSA algorithm using pub-priv keys specified in the application configuration, and insert the token to the request header.
 
-7) Drop hop headers.
+8) Drop hop headers.
 
-8) Send request to the target route, then return the same response to the client.
+9) Send request to the target route, then return the same response to the client.
 
 ### Example Request
 
