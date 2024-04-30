@@ -10,7 +10,7 @@ use tokio_tungstenite::{
 
 use crate::{
     ctx::AppConfig,
-    http::{response_by_status, RpcPayload},
+    http::{response_by_status, JsonRpcPayload},
     log_format,
     server::validation_middleware,
     GenericResult,
@@ -137,7 +137,7 @@ pub(crate) async fn socket_handler(
                                             match msg {
                                                 Some(Ok(msg)) => {
                                                     if let Message::Text(msg) = msg {
-                                                         let payload: RpcPayload = match serde_json::from_str(&msg) {
+                                                         let payload: JsonRpcPayload = match serde_json::from_str(&msg) {
                                                              Ok(t) => t,
                                                              Err(e) => {
                                                                  if let Err(e) = inbound_socket.send(format!("Invalid payload. {e}").into()).await {

@@ -20,7 +20,12 @@ pub(crate) trait SignOps {
     fn verify_message(&self) -> GenericResult<bool>;
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+/// Represents a signed message used for authenticating and validating requests processed by the proxy.
+///
+/// This structure contains cryptographic elements (`signature`) and metadata (`coin_ticker`, `address`, `timestamp_message`)
+/// that are used to verify the authenticity and integrity of a request to the proxy. This is essential for securing
+/// the proxy operations and preventing unauthorized access.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct SignedMessage {
     pub(crate) coin_ticker: String,
     pub(crate) address: String,

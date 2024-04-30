@@ -29,10 +29,18 @@ pub(crate) struct AppConfig {
 pub(crate) struct ProxyRoute {
     pub(crate) inbound_route: String,
     pub(crate) outbound_route: String,
+    pub(crate) proxy_type: ProxyType,
     #[serde(default)]
     pub(crate) authorized: bool,
     #[serde(default)]
     pub(crate) allowed_methods: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ProxyType {
+    JsonRpc,
+    GetUrl,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -82,12 +90,21 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
             ProxyRoute {
                 inbound_route: String::from("/test"),
                 outbound_route: String::from("https://komodoplatform.com"),
+                proxy_type: ProxyType::JsonRpc,
                 authorized: false,
                 allowed_methods: Vec::default(),
             },
             ProxyRoute {
                 inbound_route: String::from("/test-2"),
                 outbound_route: String::from("https://atomicdex.io"),
+                proxy_type: ProxyType::JsonRpc,
+                authorized: false,
+                allowed_methods: Vec::default(),
+            },
+            ProxyRoute {
+                inbound_route: String::from("/nft-test"),
+                outbound_route: String::from("https://nft.proxy"),
+                proxy_type: ProxyType::GetUrl,
                 authorized: false,
                 allowed_methods: Vec::default(),
             },
@@ -114,12 +131,21 @@ fn test_app_config_serialzation_and_deserialization() {
             {
                 "inbound_route": "/test",
                 "outbound_route": "https://komodoplatform.com",
+                "proxy_type":"json_rpc",
                 "authorized": false,
                 "allowed_methods": []
             },
             {
                 "inbound_route": "/test-2",
                 "outbound_route": "https://atomicdex.io",
+                "proxy_type":"json_rpc",
+                "authorized": false,
+                "allowed_methods": []
+            },
+            {
+                "inbound_route": "/nft-test",
+                "outbound_route": "https://nft.proxy",
+                "proxy_type":"get_url",
                 "authorized": false,
                 "allowed_methods": []
             }

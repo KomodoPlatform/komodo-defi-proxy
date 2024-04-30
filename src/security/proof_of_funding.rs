@@ -1,6 +1,6 @@
 use ctx::{AppConfig, ProxyRoute};
 use db::Db;
-use http::RpcPayload;
+use http::JsonRpcPayload;
 use rpc::Json;
 use serde_json::json;
 use sign::SignOps;
@@ -18,7 +18,7 @@ pub(crate) enum ProofOfFundingError {
 
 pub(crate) async fn verify_message_and_balance(
     cfg: &AppConfig,
-    payload: &RpcPayload,
+    payload: &JsonRpcPayload,
     proxy_route: &ProxyRoute,
 ) -> Result<(), ProofOfFundingError> {
     if let Ok(true) = payload.signed_message.verify_message() {

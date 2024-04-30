@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use address_status::{get_address_status_list, post_address_status};
-use ctx::{AppConfig, ProxyRoute};
+use ctx::{AppConfig, ProxyRoute, ProxyType};
 use hyper::header::HeaderName;
 use hyper::{
     header::{self, HeaderValue},
@@ -12,6 +12,7 @@ use jwt::{get_cached_token_or_generate_one, JwtClaims};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sign::SignedMessage;
+use url::Url;
 
 use super::*;
 use crate::server::{is_private_ip, validation_middleware};
@@ -62,17 +63,35 @@ pub(crate) async fn insert_jwt_to_http_header(
     Ok(())
 }
 
-async fn parse_payload(req: Request<Body>) -> GenericResult<(Request<Body>, RpcPayload)> {
+/// Asynchronously parses an HTTP request's body into a specified type `T`, modifying the request
+/// to have an empty body if the method is `GET`, and returning the original body otherwise.
+/// Ensures that the body is not empty before attempting deserialization into the non-optional type `T`.
+async fn parse_payload<T>(req: Request<Body>) -> GenericResult<(Request<Body>, T)>
+where
+    T: serde::de::DeserializeOwned,
+{
     let (parts, body) = req.into_parts();
     let body_bytes = hyper::body::to_bytes(body).await?;
 
-    let payload: RpcPayload = serde_json::from_slice(&body_bytes)?;
+    if body_bytes.is_empty() {
+        return Err("Empty body cannot be deserialized into non-optional type T".into());
+    }
 
-    Ok((Request::from_parts(parts, Body::from(body_bytes)), payload))
+    let payload: T = serde_json::from_slice(&body_bytes)?;
+
+    let new_req = if parts.method == Method::GET {
+        Request::from_parts(parts, Body::empty())
+    } else {
+        Request::from_parts(parts, Body::from(body_bytes))
+    };
+
+    Ok((new_req, payload))
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub(crate) struct RpcPayload {
+/// Represents a JSON RPC payload parsed from a proxy request. It combines standard JSON RPC method call
+/// fields with a `SignedMessage` for authentication and validation by the proxy.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub(crate) struct JsonRpcPayload {
     pub(crate) method: String,
     pub(crate) params: serde_json::value::Value,
     pub(crate) id: usize,
@@ -80,11 +99,47 @@ pub(crate) struct RpcPayload {
     pub(crate) signed_message: SignedMessage,
 }
 
+/// Represents a payload for a GET URL request parsed from a proxy request. This struct contains the URL
+/// that the proxy will forward the GET request to, along with a `SignedMessage` for authentication and validation.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub(crate) struct GetUrlPayload {
+    pub(crate) url: Url,
+    pub(crate) signed_message: SignedMessage,
+}
+
+/// Enumerates the types of payloads that can be processed by the proxy.
+/// Each variant holds a specific payload type relevant to the proxy operation being performed.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum PayloadData {
+    JsonRpc(JsonRpcPayload),
+    GetUrl(GetUrlPayload),
+}
+
+/// Asynchronously generates and parses payload data from an HTTP request based on the specified proxy type.
+/// Returns a tuple containing the modified (if necessary) request and the parsed payload from req Body as `PayloadData`.
+#[allow(dead_code)]
+async fn generate_payload_from_req(
+    req: Request<Body>,
+    proxy_type: &ProxyType,
+) -> GenericResult<(Request<Body>, PayloadData)> {
+    match proxy_type {
+        ProxyType::JsonRpc => {
+            let (req, payload) = parse_payload::<JsonRpcPayload>(req).await?;
+            Ok((req, PayloadData::JsonRpc(payload)))
+        }
+        ProxyType::GetUrl => {
+            let (req, payload) = parse_payload::<GetUrlPayload>(req).await?;
+            Ok((req, PayloadData::GetUrl(payload)))
+        }
+    }
+}
+
+// TODO change name to proxy_eth, as it handles eth api specific logic from JsonRpcPayload
 async fn proxy(
     cfg: &AppConfig,
     mut req: Request<Body>,
     remote_addr: &SocketAddr,
-    payload: RpcPayload,
+    payload: JsonRpcPayload,
     x_forwarded_for: HeaderValue,
     proxy_route: &ProxyRoute,
 ) -> GenericResult<Response<Body>> {
@@ -217,7 +272,8 @@ pub(crate) async fn http_handler(
         return handle_preflight();
     }
 
-    let (req, payload) = match parse_payload(req).await {
+    // TODO use generate_payload_from_req() instead
+    let (req, payload): (Request<Body>, JsonRpcPayload) = match parse_payload(req).await {
         Ok(t) => t,
         Err(_) => {
             log::warn!(
@@ -259,7 +315,7 @@ pub(crate) async fn http_handler(
         }
     };
 
-    let proxy_route = match cfg.get_proxy_route_by_inbound(req.uri().to_string()) {
+    let proxy_route = match cfg.get_proxy_route_by_inbound(req.uri().path().to_string()) {
         Some(proxy_route) => proxy_route,
         None => {
             log::warn!(
@@ -274,6 +330,8 @@ pub(crate) async fn http_handler(
             return response_by_status(StatusCode::NOT_FOUND);
         }
     };
+
+    // TODO here we can get ProxyType from inbound and only then call parse_payload with "Request received." logging for eth/nft etc proxy
 
     if is_private_ip {
         return proxy(
@@ -319,9 +377,9 @@ fn test_rpc_payload_serialzation_and_deserialization() {
          }
     });
 
-    let actual_payload: RpcPayload = serde_json::from_str(&json_payload.to_string()).unwrap();
+    let actual_payload: JsonRpcPayload = serde_json::from_str(&json_payload.to_string()).unwrap();
 
-    let expected_payload = RpcPayload {
+    let expected_payload = JsonRpcPayload {
         method: String::from("dummy-value"),
         params: json!([]),
         id: 1,
@@ -344,8 +402,13 @@ fn test_rpc_payload_serialzation_and_deserialization() {
 
 #[test]
 fn test_get_proxy_route_by_inbound() {
+    use std::str::FromStr;
+
     let cfg = ctx::get_app_config_test_instance();
 
+    // If we leave this code line `let proxy_route = match cfg.get_proxy_route_by_inbound(req.uri().to_string()) {`
+    // inbound_route cant be "/test", as it's not uri. I suppose inbound actually should be a Path.
+    // Two options: in `req.uri().to_string()` path() is missing or "/test" in test is wrong and the whole url should be.
     let proxy_route = cfg
         .get_proxy_route_by_inbound(String::from("/test"))
         .unwrap();
@@ -357,6 +420,11 @@ fn test_get_proxy_route_by_inbound() {
         .unwrap();
 
     assert_eq!(proxy_route.outbound_route, "https://atomicdex.io");
+
+    let url = Url::from_str("https://komodo.proxy:5535/nft-test").unwrap();
+    let path = url.path().to_string();
+    let proxy_route = cfg.get_proxy_route_by_inbound(path).unwrap();
+    assert_eq!(proxy_route.outbound_route, "https://nft.proxy");
 }
 
 #[test]
@@ -397,10 +465,10 @@ async fn test_parse_payload() {
         "dummy-value".parse().unwrap(),
     );
 
-    let (req, payload) = parse_payload(req).await.unwrap();
+    let (req, payload): (Request<Body>, JsonRpcPayload) = parse_payload(req).await.unwrap();
     let header_value = req.headers().get("dummy-header").unwrap();
 
-    let expected_payload = RpcPayload {
+    let expected_payload = JsonRpcPayload {
         method: String::from("dummy-value"),
         params: json!([]),
         id: 1,

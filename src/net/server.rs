@@ -8,7 +8,7 @@ use hyper::{Body, Request, Response, Server, StatusCode, Uri};
 use crate::address_status::AddressStatusOperations;
 use crate::ctx::ProxyRoute;
 use crate::db::Db;
-use crate::http::{http_handler, response_by_status, RpcPayload};
+use crate::http::{http_handler, response_by_status, JsonRpcPayload};
 use crate::log_format;
 use crate::proof_of_funding::{verify_message_and_balance, ProofOfFundingError};
 use crate::rate_limiter::RateLimitOperations;
@@ -67,9 +67,10 @@ async fn connection_handler(
     }
 }
 
+// TODO right now this is only an ethereum API specific validation
 pub(crate) async fn validation_middleware(
     cfg: &AppConfig,
-    payload: &RpcPayload,
+    payload: &JsonRpcPayload,
     proxy_route: &ProxyRoute,
     req_uri: &Uri,
     remote_addr: &SocketAddr,
@@ -185,7 +186,7 @@ pub(crate) async fn serve(cfg: &'static AppConfig) -> GenericResult<()> {
 
     let server = Server::bind(&addr).serve(handler);
 
-    log::info!("AtomicDEX Auth API serving on http://{}", addr);
+    log::info!("Komodo-DeFi-Poxy API serving on http://{}", addr);
 
     Ok(server.await?)
 }
