@@ -236,7 +236,7 @@ pub(crate) async fn socket_handler(
                                                 _ => break
                                             };
                                         }
-                                    };
+                                    }
                                 }
                             }
                             e => {
