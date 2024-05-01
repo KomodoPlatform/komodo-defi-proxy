@@ -22,7 +22,7 @@
     {
       "inbound_route": "/nft-test",
       "outbound_route": "https://nft.proxy",
-      "proxy_type": "get_url",
+      "proxy_type": "http_get",
       "authorized": false,
       "allowed_methods": []
     }

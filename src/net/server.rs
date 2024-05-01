@@ -39,6 +39,12 @@ fn get_real_address(req: &Request<Body>, remote_addr: &SocketAddr) -> GenericRes
     Ok(*remote_addr)
 }
 
+/// Handles incoming HTTP requests based on their content and whether they need to be upgraded
+/// to a socket connection.
+///
+/// This function first resolves the real client address from the request, considering forwarded headers.
+/// It then decides whether to handle the request as a regular HTTP request or upgrade it to a
+/// socket-based connection based on its headers and content.
 async fn connection_handler(
     cfg: &AppConfig,
     req: Request<Body>,
@@ -172,6 +178,8 @@ pub(crate) async fn validation_middleware(
     }
 }
 
+/// Starts serving the proxy API on the configured port. This function sets up the HTTP server,
+/// binds it to the specified address, and listens for incoming requests.
 pub(crate) async fn serve(cfg: &'static AppConfig) -> GenericResult<()> {
     let addr = format!("0.0.0.0:{}", cfg.port.unwrap_or(5000)).parse()?;
 

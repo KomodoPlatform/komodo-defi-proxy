@@ -99,10 +99,10 @@ pub(crate) struct JsonRpcPayload {
     pub(crate) signed_message: SignedMessage,
 }
 
-/// Represents a payload for a GET URL request parsed from a proxy request. This struct contains the URL
+/// Represents a payload for HTTP GET request parsed from a proxy request. This struct contains the URL
 /// that the proxy will forward the GET request to, along with a `SignedMessage` for authentication and validation.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub(crate) struct GetUrlPayload {
+pub(crate) struct HttpGetPayload {
     pub(crate) url: Url,
     pub(crate) signed_message: SignedMessage,
 }
@@ -112,7 +112,7 @@ pub(crate) struct GetUrlPayload {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum PayloadData {
     JsonRpc(JsonRpcPayload),
-    GetUrl(GetUrlPayload),
+    HttpGet(HttpGetPayload),
 }
 
 impl PayloadData {
@@ -120,7 +120,7 @@ impl PayloadData {
     fn signed_message(&self) -> &SignedMessage {
         match self {
             PayloadData::JsonRpc(json_rpc_payload) => &json_rpc_payload.signed_message,
-            PayloadData::GetUrl(get_url_payload) => &get_url_payload.signed_message,
+            PayloadData::HttpGet(http_get_payload) => &http_get_payload.signed_message,
         }
     }
 }
@@ -136,9 +136,9 @@ async fn generate_payload_from_req(
             let (req, payload) = parse_payload::<JsonRpcPayload>(req).await?;
             Ok((req, PayloadData::JsonRpc(payload)))
         }
-        ProxyType::GetUrl => {
-            let (req, payload) = parse_payload::<GetUrlPayload>(req).await?;
-            Ok((req, PayloadData::GetUrl(payload)))
+        ProxyType::HttpGet => {
+            let (req, payload) = parse_payload::<HttpGetPayload>(req).await?;
+            Ok((req, PayloadData::HttpGet(payload)))
         }
     }
 }
@@ -281,6 +281,7 @@ pub(crate) async fn http_handler(
         return handle_preflight();
     }
 
+    // create proxy_route before payload, as we need proxy_type from it for payload generation
     let proxy_route = match cfg.get_proxy_route_by_inbound(req.uri().path().to_string()) {
         Some(proxy_route) => proxy_route,
         None => {
@@ -498,7 +499,7 @@ async fn test_parse_json_rpc_payload() {
 }
 
 #[tokio::test]
-async fn test_parse_get_url_payload() {
+async fn test_parse_http_get_payload() {
     let url_string = "http://example.com";
     let serialized_payload = json!({
         "url": url_string,
@@ -517,7 +518,7 @@ async fn test_parse_get_url_payload() {
         "application/json".parse().unwrap(),
     );
 
-    let (mut req, payload): (Request<Body>, GetUrlPayload) = parse_payload(req).await.unwrap();
+    let (mut req, payload): (Request<Body>, HttpGetPayload) = parse_payload(req).await.unwrap();
 
     let body_bytes = hyper::body::to_bytes(req.body_mut()).await.unwrap();
     assert!(
@@ -527,7 +528,7 @@ async fn test_parse_get_url_payload() {
 
     let header_value = req.headers().get("accept").unwrap();
 
-    let expected_payload = GetUrlPayload {
+    let expected_payload = HttpGetPayload {
         url: Url::parse(url_string).unwrap(),
         signed_message: SignedMessage {
             coin_ticker: String::from("BTC"),

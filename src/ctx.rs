@@ -14,35 +14,54 @@ pub(crate) fn get_app_config() -> &'static AppConfig {
     })
 }
 
+/// Configuration settings for the application, loaded typically from a JSON configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct AppConfig {
+    // Optional server port to listen on. If None in config file, then 5000 is default.
     pub(crate) port: Option<u16>,
+    // Redis database connection string.
     pub(crate) redis_connection_string: String,
+    // File path to the public key used for cryptographic operations.
     pub(crate) pubkey_path: String,
+    // File path to the private key used for cryptographic operations.
     pub(crate) privkey_path: String,
+    // Optional token expiration time in seconds. If None then 3600 is default.
     pub(crate) token_expiration_time: Option<i64>,
+    // Routing configurations for proxying requests.
     pub(crate) proxy_routes: Vec<ProxyRoute>,
+    // Rate limiting settings for request handling.
     pub(crate) rate_limiter: RateLimiter,
 }
 
+/// Defines a routing rule for proxying requests from an inbound route to an outbound URL
+/// based on a specified proxy type and additional authorization and method filtering criteria.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct ProxyRoute {
+    // The incoming route pattern.
     pub(crate) inbound_route: String,
+    // The target URL to which requests are forwarded.
     pub(crate) outbound_route: String,
+    // The type of proxying to perform (e.g., JSON RPC, HTTP GET).
     pub(crate) proxy_type: ProxyType,
+    // Whether authorization is required for this route.
     #[serde(default)]
     pub(crate) authorized: bool,
+    // Specific HTTP methods allowed for this route.
     #[serde(default)]
     pub(crate) allowed_methods: Vec<String>,
 }
 
+/// Enumerates different types of proxy operations supported, such as JSON RPC and HTTP GET.
+/// This helps in applying specific handling logic based on the proxy type.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ProxyType {
     JsonRpc,
-    GetUrl,
+    HttpGet,
 }
 
+/// Configuration for rate limiting to manage the number of requests allowed over specified time intervals.
+/// This prevents abuse and ensures fair usage of resources among all clients.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct RateLimiter {
     pub(crate) rp_1_min: u16,
@@ -104,7 +123,7 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
             ProxyRoute {
                 inbound_route: String::from("/nft-test"),
                 outbound_route: String::from("https://nft.proxy"),
-                proxy_type: ProxyType::GetUrl,
+                proxy_type: ProxyType::HttpGet,
                 authorized: false,
                 allowed_methods: Vec::default(),
             },
@@ -145,7 +164,7 @@ fn test_app_config_serialzation_and_deserialization() {
             {
                 "inbound_route": "/nft-test",
                 "outbound_route": "https://nft.proxy",
-                "proxy_type":"get_url",
+                "proxy_type":"http_get",
                 "authorized": false,
                 "allowed_methods": []
             }
