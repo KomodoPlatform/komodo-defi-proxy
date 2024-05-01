@@ -115,9 +115,18 @@ pub(crate) enum PayloadData {
     GetUrl(GetUrlPayload),
 }
 
+impl PayloadData {
+    /// Returns a reference to the `SignedMessage` contained within the payload.
+    fn signed_message(&self) -> &SignedMessage {
+        match self {
+            PayloadData::JsonRpc(json_rpc_payload) => &json_rpc_payload.signed_message,
+            PayloadData::GetUrl(get_url_payload) => &get_url_payload.signed_message,
+        }
+    }
+}
+
 /// Asynchronously generates and parses payload data from an HTTP request based on the specified proxy type.
 /// Returns a tuple containing the modified (if necessary) request and the parsed payload from req Body as `PayloadData`.
-#[allow(dead_code)]
 async fn generate_payload_from_req(
     req: Request<Body>,
     proxy_type: &ProxyType,
@@ -134,7 +143,7 @@ async fn generate_payload_from_req(
     }
 }
 
-// TODO change name to proxy_eth, as it handles eth api specific logic from JsonRpcPayload
+// TODO handle eth and nft features
 async fn proxy(
     cfg: &AppConfig,
     mut req: Request<Body>,
@@ -272,8 +281,23 @@ pub(crate) async fn http_handler(
         return handle_preflight();
     }
 
-    // TODO use generate_payload_from_req() instead
-    let (req, payload): (Request<Body>, JsonRpcPayload) = match parse_payload(req).await {
+    let proxy_route = match cfg.get_proxy_route_by_inbound(req.uri().path().to_string()) {
+        Some(proxy_route) => proxy_route,
+        None => {
+            log::warn!(
+                "{}",
+                log_format!(
+                    remote_addr.ip(),
+                    String::from("-"),
+                    req.uri(),
+                    "Proxy route not found, returning 404."
+                )
+            );
+            return response_by_status(StatusCode::NOT_FOUND);
+        }
+    };
+
+    let (req, payload) = match generate_payload_from_req(req, &proxy_route.proxy_type).await {
         Ok(t) => t,
         Err(_) => {
             log::warn!(
@@ -282,7 +306,7 @@ pub(crate) async fn http_handler(
                     remote_addr.ip(),
                     String::from("-"),
                     req_uri,
-                    "Recieved invalid http payload, returning 401."
+                    "Received invalid http payload, returning 401."
                 )
             );
             return response_by_status(StatusCode::UNAUTHORIZED);
@@ -293,9 +317,9 @@ pub(crate) async fn http_handler(
         "{}",
         log_format!(
             remote_addr.ip(),
-            payload.signed_message.address,
+            payload.signed_message().address,
             req_uri,
-            "Request received."
+            "Request and payload data received."
         )
     );
 
@@ -306,7 +330,7 @@ pub(crate) async fn http_handler(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
-                    payload.signed_message.address,
+                    payload.signed_message().address,
                     req_uri,
                     "Error type casting of IpAddr into HeaderValue, returning 500."
                 )
@@ -315,51 +339,29 @@ pub(crate) async fn http_handler(
         }
     };
 
-    let proxy_route = match cfg.get_proxy_route_by_inbound(req.uri().path().to_string()) {
-        Some(proxy_route) => proxy_route,
-        None => {
-            log::warn!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    payload.signed_message.address,
-                    req.uri(),
-                    "Proxy route not found, returning 404."
-                )
-            );
-            return response_by_status(StatusCode::NOT_FOUND);
-        }
+    let temp = JsonRpcPayload {
+        method: "".to_string(),
+        params: Default::default(),
+        id: 0,
+        jsonrpc: "".to_string(),
+        signed_message: SignedMessage {
+            coin_ticker: "".to_string(),
+            address: "".to_string(),
+            timestamp_message: 0,
+            signature: "".to_string(),
+        },
     };
-
-    // TODO here we can get ProxyType from inbound and only then call parse_payload with "Request received." logging for eth/nft etc proxy
-
     if is_private_ip {
-        return proxy(
-            cfg,
-            req,
-            &remote_addr,
-            payload,
-            x_forwarded_for,
-            proxy_route,
-        )
-        .await;
+        return proxy(cfg, req, &remote_addr, temp, x_forwarded_for, proxy_route).await;
     }
 
     if let Err(status_code) =
-        validation_middleware(cfg, &payload, proxy_route, req.uri(), &remote_addr).await
+        validation_middleware(cfg, &temp, proxy_route, req.uri(), &remote_addr).await
     {
         return response_by_status(status_code);
     }
 
-    proxy(
-        cfg,
-        req,
-        &remote_addr,
-        payload,
-        x_forwarded_for,
-        proxy_route,
-    )
-    .await
+    proxy(cfg, req, &remote_addr, temp, x_forwarded_for, proxy_route).await
 }
 
 #[test]
@@ -444,7 +446,7 @@ fn test_respond_by_status() {
 }
 
 #[tokio::test]
-async fn test_parse_payload() {
+async fn test_parse_json_rpc_payload() {
     let serialized_payload = json!({
         "method": "dummy-value",
         "params": [],
@@ -459,13 +461,23 @@ async fn test_parse_payload() {
     })
     .to_string();
 
-    let mut req = Request::new(Body::from(serialized_payload));
+    let mut req = Request::builder()
+        .method(Method::POST)
+        .body(Body::from(serialized_payload))
+        .unwrap();
     req.headers_mut().insert(
         HeaderName::from_static("dummy-header"),
         "dummy-value".parse().unwrap(),
     );
 
-    let (req, payload): (Request<Body>, JsonRpcPayload) = parse_payload(req).await.unwrap();
+    let (mut req, payload): (Request<Body>, JsonRpcPayload) = parse_payload(req).await.unwrap();
+
+    let body_bytes = hyper::body::to_bytes(req.body_mut()).await.unwrap();
+    assert!(
+        !body_bytes.is_empty(),
+        "Body should not be empty for non-GET methods"
+    );
+
     let header_value = req.headers().get("dummy-header").unwrap();
 
     let expected_payload = JsonRpcPayload {
@@ -483,4 +495,48 @@ async fn test_parse_payload() {
 
     assert_eq!(payload, expected_payload);
     assert_eq!(header_value, "dummy-value");
+}
+
+#[tokio::test]
+async fn test_parse_get_url_payload() {
+    let url_string = "http://example.com";
+    let serialized_payload = json!({
+        "url": url_string,
+        "signed_message": {
+            "coin_ticker": "BTC",
+            "address": "dummy-value",
+            "timestamp_message": 1655320000,
+            "signature": "dummy-value",
+         }
+    })
+    .to_string();
+
+    let mut req = Request::new(Body::from(serialized_payload));
+    req.headers_mut().insert(
+        HeaderName::from_static("accept"),
+        "application/json".parse().unwrap(),
+    );
+
+    let (mut req, payload): (Request<Body>, GetUrlPayload) = parse_payload(req).await.unwrap();
+
+    let body_bytes = hyper::body::to_bytes(req.body_mut()).await.unwrap();
+    assert!(
+        body_bytes.is_empty(),
+        "Body should be empty for GET methods"
+    );
+
+    let header_value = req.headers().get("accept").unwrap();
+
+    let expected_payload = GetUrlPayload {
+        url: Url::parse(url_string).unwrap(),
+        signed_message: SignedMessage {
+            coin_ticker: String::from("BTC"),
+            address: String::from("dummy-value"),
+            timestamp_message: 1655320000,
+            signature: String::from("dummy-value"),
+        },
+    };
+
+    assert_eq!(payload, expected_payload);
+    assert_eq!(header_value, "application/json");
 }

@@ -67,7 +67,7 @@ async fn connection_handler(
     }
 }
 
-// TODO right now this is only an ethereum API specific validation
+// TODO handle eth and nft features
 pub(crate) async fn validation_middleware(
     cfg: &AppConfig,
     payload: &JsonRpcPayload,
