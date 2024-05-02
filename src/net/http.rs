@@ -17,6 +17,10 @@ use url::Url;
 use super::*;
 use crate::server::{is_private_ip, validation_middleware};
 
+/// Value
+pub(crate) const APPLICATION_JSON: &str = "application/json";
+/// Header
+pub(crate) const X_FORWARDED_FOR: &str = "x-forwarded-for";
 async fn get_healthcheck() -> GenericResult<Response<Body>> {
     let json = json!({
         "health": "ok",
@@ -27,7 +31,7 @@ async fn get_healthcheck() -> GenericResult<Response<Body>> {
         .header("Access-Control-Allow-Origin", "*")
         .header("Access-Control-Allow-Headers", "*")
         .header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_TYPE, APPLICATION_JSON)
         .body(Body::from(json.to_string()))?)
 }
 
@@ -156,8 +160,8 @@ async fn proxy(
         PayloadData::JsonRpc(payload) => {
             proxy_eth(cfg, req, remote_addr, payload, x_forwarded_for, proxy_route).await
         }
-        PayloadData::HttpGet(_payload) => {
-            todo!()
+        PayloadData::HttpGet(payload) => {
+            proxy_http_get(cfg, req, remote_addr, payload, x_forwarded_for, proxy_route).await
         }
     }
 }
@@ -239,9 +243,130 @@ async fn proxy_eth(
     }
 
     req.headers_mut()
-        .insert(HeaderName::from_static("x-forwarded-for"), x_forwarded_for);
+        .insert(HeaderName::from_static(X_FORWARDED_FOR), x_forwarded_for);
     req.headers_mut()
-        .insert(header::CONTENT_TYPE, "application/json".parse()?);
+        .insert(header::CONTENT_TYPE, APPLICATION_JSON.parse()?);
+
+    let https = HttpsConnector::new();
+    let client = hyper::Client::builder().build(https);
+
+    let target_uri = req.uri().clone();
+    let res = match client.request(req).await {
+        Ok(t) => t,
+        Err(_) => {
+            log::warn!(
+                "{}",
+                log_format!(
+                    remote_addr.ip(),
+                    payload.signed_message.address,
+                    original_req_uri,
+                    "Couldn't reach {}, returning 503.",
+                    target_uri
+                )
+            );
+            return response_by_status(StatusCode::SERVICE_UNAVAILABLE);
+        }
+    };
+
+    Ok(res)
+}
+
+async fn proxy_http_get(
+    cfg: &AppConfig,
+    mut req: Request<Body>,
+    remote_addr: &SocketAddr,
+    payload: HttpGetPayload,
+    x_forwarded_for: HeaderValue,
+    proxy_route: &ProxyRoute,
+) -> GenericResult<Response<Body>> {
+    if proxy_route.authorized {
+        if let Err(e) = insert_jwt_to_http_header(cfg, req.headers_mut()).await {
+            log::error!(
+                "{}",
+                log_format!(
+                    remote_addr.ip(),
+                    payload.signed_message.address,
+                    req.uri(),
+                    "Error inserting JWT into HTTP header: {}",
+                    e
+                )
+            );
+            return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    let original_req_uri = req.uri().clone();
+
+    // Parse the intended outbound URL from the ProxyRoute configuration
+    let proxy_outbound_uri = match proxy_route.outbound_route.parse::<Url>() {
+        Ok(r) => r,
+        Err(_) => {
+            log::error!(
+                "{}",
+                log_format!(
+                    remote_addr.ip(),
+                    payload.signed_message.address,
+                    original_req_uri,
+                    "Failed to parse outbound_route URL, returning 500."
+                )
+            );
+            return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Check that the payload URL's Host and Port match the proxy route's outbound URL
+    if payload.url.host_str() == proxy_outbound_uri.host_str()
+        && payload.url.port_or_known_default() == proxy_outbound_uri.port_or_known_default()
+    {
+        match payload.url.as_str().parse() {
+            Ok(uri) => *req.uri_mut() = uri,
+            Err(e) => {
+                log::error!(
+                    "{}",
+                    log_format!(
+                        remote_addr.ip(),
+                        payload.signed_message.address,
+                        original_req_uri,
+                        "Failed to parse URL to Uri: {}",
+                        e
+                    )
+                );
+                return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    } else {
+        log::error!(
+            "{}",
+            log_format!(
+                remote_addr.ip(),
+                payload.signed_message.address,
+                original_req_uri,
+                "Mismatch between payload URL and configured outbound URL, returning 500."
+            )
+        );
+        return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // drop hop headers
+    for key in &[
+        header::ACCEPT_ENCODING,
+        header::CONNECTION,
+        header::HOST,
+        header::PROXY_AUTHENTICATE,
+        header::PROXY_AUTHORIZATION,
+        header::TE,
+        header::TRANSFER_ENCODING,
+        header::TRAILER,
+        header::UPGRADE,
+        header::HeaderName::from_static("keep-alive"),
+    ] {
+        req.headers_mut().remove(key);
+    }
+
+    req.headers_mut()
+        .insert(HeaderName::from_static(X_FORWARDED_FOR), x_forwarded_for);
+    req.headers_mut()
+        .insert(header::ACCEPT, APPLICATION_JSON.parse()?);
 
     let https = HttpsConnector::new();
     let client = hyper::Client::builder().build(https);
@@ -537,7 +662,7 @@ async fn test_parse_http_get_payload() {
     let mut req = Request::new(Body::from(serialized_payload));
     req.headers_mut().insert(
         HeaderName::from_static("accept"),
-        "application/json".parse().unwrap(),
+        APPLICATION_JSON.parse().unwrap(),
     );
 
     let (mut req, payload): (Request<Body>, HttpGetPayload) = parse_payload(req).await.unwrap();
@@ -561,5 +686,5 @@ async fn test_parse_http_get_payload() {
     };
 
     assert_eq!(payload, expected_payload);
-    assert_eq!(header_value, "application/json");
+    assert_eq!(header_value, APPLICATION_JSON);
 }

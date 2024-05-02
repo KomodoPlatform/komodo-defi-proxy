@@ -8,7 +8,7 @@ use hyper::{Body, Request, Response, Server, StatusCode, Uri};
 use crate::address_status::AddressStatusOperations;
 use crate::ctx::ProxyRoute;
 use crate::db::Db;
-use crate::http::{http_handler, response_by_status, JsonRpcPayload, PayloadData};
+use crate::http::{http_handler, response_by_status, JsonRpcPayload, PayloadData, X_FORWARDED_FOR};
 use crate::log_format;
 use crate::proof_of_funding::{verify_message_and_balance, ProofOfFundingError};
 use crate::rate_limiter::RateLimitOperations;
@@ -30,7 +30,7 @@ pub(crate) fn is_private_ip(ip: &IpAddr) -> bool {
 }
 
 fn get_real_address(req: &Request<Body>, remote_addr: &SocketAddr) -> GenericResult<SocketAddr> {
-    if let Some(ip) = req.headers().get("x-forwarded-for") {
+    if let Some(ip) = req.headers().get(X_FORWARDED_FOR) {
         let addr = IpAddr::from_str(ip.to_str()?)?;
 
         return Ok(SocketAddr::new(addr, remote_addr.port()));
@@ -228,7 +228,7 @@ fn test_get_real_address() {
     assert_eq!("127.0.0.1", remote_addr.ip().to_string());
 
     req.headers_mut().insert(
-        hyper::header::HeaderName::from_static("x-forwarded-for"),
+        hyper::header::HeaderName::from_static(X_FORWARDED_FOR),
         "0.0.0.0".parse().unwrap(),
     );
 

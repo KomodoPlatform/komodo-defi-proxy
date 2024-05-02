@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use bytes::Buf;
 use ctx::AppConfig;
 use db::Db;
+use http::APPLICATION_JSON;
 use hyper::{header, Body, Request, Response, StatusCode};
 use redis::FromRedisValue;
 use serde::{Deserialize, Serialize};
@@ -28,7 +29,7 @@ pub(crate) async fn post_address_status(
 
     Ok(Response::builder()
         .status(StatusCode::NO_CONTENT)
-        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_TYPE, APPLICATION_JSON)
         .body(Body::from(Vec::new()))?)
 }
 
@@ -47,7 +48,7 @@ pub(crate) async fn get_address_status_list(cfg: &AppConfig) -> GenericResult<Re
 
     Ok(Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_TYPE, APPLICATION_JSON)
         .body(Body::from(serialized))?)
 }
 
