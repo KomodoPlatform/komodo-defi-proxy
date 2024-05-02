@@ -146,6 +146,24 @@ async fn generate_payload_from_req(
 // TODO handle eth and nft features
 async fn proxy(
     cfg: &AppConfig,
+    req: Request<Body>,
+    remote_addr: &SocketAddr,
+    payload: PayloadData,
+    x_forwarded_for: HeaderValue,
+    proxy_route: &ProxyRoute,
+) -> GenericResult<Response<Body>> {
+    match payload {
+        PayloadData::JsonRpc(payload) => {
+            proxy_eth(cfg, req, remote_addr, payload, x_forwarded_for, proxy_route).await
+        }
+        PayloadData::HttpGet(_payload) => {
+            todo!()
+        }
+    }
+}
+
+async fn proxy_eth(
+    cfg: &AppConfig,
     mut req: Request<Body>,
     remote_addr: &SocketAddr,
     payload: JsonRpcPayload,
@@ -340,29 +358,33 @@ pub(crate) async fn http_handler(
         }
     };
 
-    let temp = JsonRpcPayload {
-        method: "".to_string(),
-        params: Default::default(),
-        id: 0,
-        jsonrpc: "".to_string(),
-        signed_message: SignedMessage {
-            coin_ticker: "".to_string(),
-            address: "".to_string(),
-            timestamp_message: 0,
-            signature: "".to_string(),
-        },
-    };
     if is_private_ip {
-        return proxy(cfg, req, &remote_addr, temp, x_forwarded_for, proxy_route).await;
+        return proxy(
+            cfg,
+            req,
+            &remote_addr,
+            payload,
+            x_forwarded_for,
+            proxy_route,
+        )
+        .await;
     }
 
     if let Err(status_code) =
-        validation_middleware(cfg, &temp, proxy_route, req.uri(), &remote_addr).await
+        validation_middleware(cfg, &payload, proxy_route, req.uri(), &remote_addr).await
     {
         return response_by_status(status_code);
     }
 
-    proxy(cfg, req, &remote_addr, temp, x_forwarded_for, proxy_route).await
+    proxy(
+        cfg,
+        req,
+        &remote_addr,
+        payload,
+        x_forwarded_for,
+        proxy_route,
+    )
+    .await
 }
 
 #[test]

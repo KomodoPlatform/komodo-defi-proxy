@@ -8,7 +8,7 @@ use hyper::{Body, Request, Response, Server, StatusCode, Uri};
 use crate::address_status::AddressStatusOperations;
 use crate::ctx::ProxyRoute;
 use crate::db::Db;
-use crate::http::{http_handler, response_by_status, JsonRpcPayload};
+use crate::http::{http_handler, response_by_status, JsonRpcPayload, PayloadData};
 use crate::log_format;
 use crate::proof_of_funding::{verify_message_and_balance, ProofOfFundingError};
 use crate::rate_limiter::RateLimitOperations;
@@ -75,6 +75,24 @@ async fn connection_handler(
 
 // TODO handle eth and nft features
 pub(crate) async fn validation_middleware(
+    cfg: &AppConfig,
+    payload: &PayloadData,
+    proxy_route: &ProxyRoute,
+    req_uri: &Uri,
+    remote_addr: &SocketAddr,
+) -> Result<(), StatusCode> {
+    match payload {
+        PayloadData::JsonRpc(payload) => {
+            validation_middleware_eth(cfg, payload, proxy_route, req_uri, remote_addr).await
+        }
+        PayloadData::HttpGet(_payload) => {
+            // TODO add validation_middleware for nft
+            Ok(())
+        }
+    }
+}
+
+pub(crate) async fn validation_middleware_eth(
     cfg: &AppConfig,
     payload: &JsonRpcPayload,
     proxy_route: &ProxyRoute,
