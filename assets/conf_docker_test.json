@@ -1,0 +1,23 @@
+{
+  "port": 6150,
+  "pubkey_path": "/usr/src/komodo-defi-proxy/assets/.pubkey_test",
+  "privkey_path": "/usr/src/komodo-defi-proxy/assets/.privkey_test",
+  "redis_connection_string": "redis://redis:6379",
+  "token_expiration_time": 300,
+  "proxy_routes": [
+    {
+      "inbound_route": "/nft",
+      "outbound_route": "https://nft.proxy",
+      "proxy_type": "http_get",
+      "authorized": false,
+      "allowed_methods": []
+    }
+  ],
+  "rate_limiter": {
+    "rp_1_min": 30,
+    "rp_5_min": 100,
+    "rp_15_min": 200,
+    "rp_30_min": 350,
+    "rp_60_min": 575
+  }
+}

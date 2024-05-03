@@ -1,0 +1,20 @@
+version: '3.8'
+services:
+  redis:
+    image: redis:latest
+    restart: always
+    ports:
+      - "6379:6379"
+
+  proxy:
+    build:
+      context: ./
+      dockerfile: Containerfile
+    ports:
+      - "6150:6150"
+    depends_on:
+      - redis
+    environment:
+      AUTH_APP_CONFIG_PATH: /usr/src/komodo-defi-proxy/assets/conf_docker_test.json
+    volumes:
+      - ./assets:/usr/src/komodo-defi-proxy/assets
