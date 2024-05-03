@@ -1,11 +1,13 @@
 use std::net::SocketAddr;
+use std::str::FromStr;
 
 use address_status::{get_address_status_list, post_address_status};
 use ctx::{AppConfig, ProxyRoute, ProxyType};
 use hyper::header::HeaderName;
+use hyper::http::uri::PathAndQuery;
 use hyper::{
     header::{self, HeaderValue},
-    Body, HeaderMap, Method, Request, Response, StatusCode,
+    Body, HeaderMap, Method, Request, Response, StatusCode, Uri,
 };
 use hyper_tls::HttpsConnector;
 use jwt::{get_cached_token_or_generate_one, JwtClaims};
@@ -392,6 +394,33 @@ async fn proxy_http_get(
     Ok(res)
 }
 
+#[allow(dead_code)]
+/// Modifies the URI of an HTTP request to replace the base URI with the one specified in `ProxyRoute`
+/// while preserving the original request's path and query parameters.
+async fn modify_request_uri(
+    req: &mut Request<Body>,
+    proxy_route: &ProxyRoute,
+) -> GenericResult<Uri> {
+    let original_req_uri = req.uri().clone();
+
+    let mut proxy_outbound_parts = proxy_route.outbound_route.parse::<Uri>()?.into_parts();
+
+    let path_and_query = PathAndQuery::from_str(
+        original_req_uri
+            .path_and_query()
+            .map_or("/", |pq| pq.as_str()),
+    )?;
+    // Append the path and query from the original request URI to the proxy outbound URI.
+    proxy_outbound_parts.path_and_query = Some(path_and_query);
+
+    // Reconstruct the full URI with the updated parts.
+    let new_uri = Uri::from_parts(proxy_outbound_parts)?;
+
+    // Update the request URI.
+    *req.uri_mut() = new_uri;
+    Ok(original_req_uri)
+}
+
 pub(crate) async fn http_handler(
     cfg: &AppConfig,
     req: Request<Body>,
@@ -687,4 +716,29 @@ async fn test_parse_http_get_payload() {
 
     assert_eq!(payload, expected_payload);
     assert_eq!(header_value, APPLICATION_JSON);
+}
+
+#[tokio::test]
+async fn test_modify_request_uri() {
+    let orig_uri_str = "https://proxy.example:3535/api/v2/item/0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB/1?chain=eth&format=decimal&normalizeMetadata=true&media_items=false";
+    let mut req = Request::builder()
+        .uri(orig_uri_str)
+        .body(Body::empty())
+        .unwrap();
+
+    let proxy_route = ProxyRoute {
+        inbound_route: String::new(),
+        outbound_route: "http://localhost:8000".to_string(),
+        proxy_type: ProxyType::HttpGet,
+        authorized: false,
+        allowed_methods: vec![],
+    };
+
+    let returned_orig_uri = modify_request_uri(&mut req, &proxy_route).await.unwrap();
+
+    assert_eq!(
+        req.uri(),
+        "http://localhost:8000/api/v2/item/0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB/1?chain=eth&format=decimal&normalizeMetadata=true&media_items=false"
+    );
+    assert_eq!(returned_orig_uri, orig_uri_str);
 }

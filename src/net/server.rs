@@ -212,7 +212,7 @@ pub(crate) async fn serve(cfg: &'static AppConfig) -> GenericResult<()> {
 
     let server = Server::bind(&addr).serve(handler);
 
-    log::info!("Komodo-DeFi-Poxy API serving on http://{}", addr);
+    log::info!("Komodo-DeFi-Proxy API serving on http://{}", addr);
 
     Ok(server.await?)
 }
