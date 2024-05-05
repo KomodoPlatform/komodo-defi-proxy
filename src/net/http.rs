@@ -14,7 +14,6 @@ use jwt::{get_cached_token_or_generate_one, JwtClaims};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sign::SignedMessage;
-use url::Url;
 
 use super::*;
 use crate::server::{is_private_ip, validation_middleware};
@@ -109,7 +108,6 @@ pub(crate) struct JsonRpcPayload {
 /// that the proxy will forward the GET request to, along with a `SignedMessage` for authentication and validation.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct HttpGetPayload {
-    pub(crate) url: Url,
     pub(crate) signed_message: SignedMessage,
 }
 
@@ -562,7 +560,7 @@ fn test_get_proxy_route_by_inbound() {
 
     assert_eq!(proxy_route.outbound_route, "https://atomicdex.io");
 
-    let url = Url::from_str("https://komodo.proxy:5535/nft-test").unwrap();
+    let url = Uri::from_str("https://komodo.proxy:5535/nft-test").unwrap();
     let path = url.path().to_string();
     let proxy_route = cfg.get_proxy_route_by_inbound(path).unwrap();
     assert_eq!(proxy_route.outbound_route, "https://nft.proxy");
@@ -638,9 +636,8 @@ async fn test_parse_json_rpc_payload() {
 
 #[tokio::test]
 async fn test_parse_http_get_payload() {
-    let url_string = "http://example.com";
     let serialized_payload = json!({
-        "url": url_string,
+        "url": "http://example.com",
         "signed_message": {
             "coin_ticker": "BTC",
             "address": "dummy-value",
@@ -667,7 +664,6 @@ async fn test_parse_http_get_payload() {
     let header_value = req.headers().get("accept").unwrap();
 
     let expected_payload = HttpGetPayload {
-        url: Url::parse(url_string).unwrap(),
         signed_message: SignedMessage {
             coin_ticker: String::from("BTC"),
             address: String::from("dummy-value"),

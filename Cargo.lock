@@ -717,7 +717,6 @@ dependencies = [
  "simple_logger",
  "tokio",
  "tokio-tungstenite",
- "url",
 ]
 
 [[package]]
@@ -1701,7 +1700,6 @@ dependencies = [
  "idna",
  "matches",
  "percent-encoding",
- "serde",
 ]
 
 [[package]]
