@@ -289,7 +289,7 @@ async fn proxy_http_get(
                     remote_addr.ip(),
                     payload.signed_message.address,
                     req.uri(),
-                    "Error inserting JWT into HTTP header: {}",
+                    "Error inserting JWT into HTTP header: {}, returning 500.",
                     e
                 )
             );
@@ -299,51 +299,15 @@ async fn proxy_http_get(
 
     let original_req_uri = req.uri().clone();
 
-    // Parse the intended outbound URL from the ProxyRoute configuration
-    let proxy_outbound_uri = match proxy_route.outbound_route.parse::<Url>() {
-        Ok(r) => r,
-        Err(_) => {
-            log::error!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    payload.signed_message.address,
-                    original_req_uri,
-                    "Failed to parse outbound_route URL, returning 500."
-                )
-            );
-            return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    // Check that the payload URL's Host and Port match the proxy route's outbound URL
-    if payload.url.host_str() == proxy_outbound_uri.host_str()
-        && payload.url.port_or_known_default() == proxy_outbound_uri.port_or_known_default()
-    {
-        match payload.url.as_str().parse() {
-            Ok(uri) => *req.uri_mut() = uri,
-            Err(e) => {
-                log::error!(
-                    "{}",
-                    log_format!(
-                        remote_addr.ip(),
-                        payload.signed_message.address,
-                        original_req_uri,
-                        "Failed to parse URL to Uri: {}",
-                        e
-                    )
-                );
-                return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-        }
-    } else {
+    if let Err(e) = modify_request_uri(&mut req, proxy_route).await {
         log::error!(
             "{}",
             log_format!(
                 remote_addr.ip(),
                 payload.signed_message.address,
                 original_req_uri,
-                "Mismatch between payload URL and configured outbound URL, returning 500."
+                "Error modifying request Uri: {}, returning 500.",
+                e
             )
         );
         return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
@@ -394,19 +358,17 @@ async fn proxy_http_get(
     Ok(res)
 }
 
-#[allow(dead_code)]
 /// Modifies the URI of an HTTP request to replace the base URI with the one specified in `ProxyRoute`
 /// while preserving the original request's path and query parameters.
 async fn modify_request_uri(
     req: &mut Request<Body>,
     proxy_route: &ProxyRoute,
-) -> GenericResult<Uri> {
-    let original_req_uri = req.uri().clone();
-
+) -> GenericResult<()> {
     let mut proxy_outbound_parts = proxy_route.outbound_route.parse::<Uri>()?.into_parts();
 
     let path_and_query = PathAndQuery::from_str(
-        original_req_uri
+        req.uri()
+            .clone()
             .path_and_query()
             .map_or("/", |pq| pq.as_str()),
     )?;
@@ -418,7 +380,7 @@ async fn modify_request_uri(
 
     // Update the request URI.
     *req.uri_mut() = new_uri;
-    Ok(original_req_uri)
+    Ok(())
 }
 
 pub(crate) async fn http_handler(
@@ -734,11 +696,10 @@ async fn test_modify_request_uri() {
         allowed_methods: vec![],
     };
 
-    let returned_orig_uri = modify_request_uri(&mut req, &proxy_route).await.unwrap();
+    modify_request_uri(&mut req, &proxy_route).await.unwrap();
 
     assert_eq!(
         req.uri(),
         "http://localhost:8000/api/v2/item/0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB/1?chain=eth&format=decimal&normalizeMetadata=true&media_items=false"
     );
-    assert_eq!(returned_orig_uri, orig_uri_str);
 }
