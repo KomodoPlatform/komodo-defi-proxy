@@ -371,7 +371,7 @@ async fn modify_request_uri(
 
     let path_and_query =
         PathAndQuery::from_str(payload_uri.path_and_query().map_or("/", |pq| pq.as_str()))?;
-    // Append the path and query from the original request URI to the proxy outbound URI.
+    // Append the path and query from the payload URI to the proxy outbound URI.
     proxy_outbound_parts.path_and_query = Some(path_and_query);
 
     // Reconstruct the full URI with the updated parts.
