@@ -18,7 +18,7 @@ use crate::{ctx::AppConfig, GenericError, GenericResult};
 #[macro_export]
 macro_rules! log_format {
   ($ip: expr, $address: expr, $path: expr, $format: expr, $($args: tt)+) => {format!(concat!("[Ip: {} | Address: {} | Path: {}] ", $format), $ip, $address, $path, $($args)+)};
-  ($ip: expr, $address: expr, $path: expr, $format: expr) => {format!(concat!("[Ip: {} | Pubkey: {} | Address: {}] ", $format), $ip, $address, $path)}
+  ($ip: expr, $address: expr, $path: expr, $format: expr) => {format!(concat!("[Ip: {} | Address: {} | Path: {}] ", $format), $ip, $address, $path)}
 }
 
 pub(crate) fn is_private_ip(ip: &IpAddr) -> bool {
