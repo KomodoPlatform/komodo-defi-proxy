@@ -14,6 +14,7 @@ use jwt::{get_cached_token_or_generate_one, JwtClaims};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sign::SignedMessage;
+use url::Url;
 
 use super::*;
 use crate::server::{is_private_ip, validation_middleware};
@@ -95,7 +96,7 @@ where
 
 /// Represents a JSON RPC payload parsed from a proxy request. It combines standard JSON RPC method call
 /// fields with a `SignedMessage` for authentication and validation by the proxy.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub(crate) struct JsonRpcPayload {
     pub(crate) method: String,
     pub(crate) params: serde_json::value::Value,
@@ -106,8 +107,9 @@ pub(crate) struct JsonRpcPayload {
 
 /// Represents a payload for HTTP GET request parsed from a proxy request. This struct contains the URL
 /// that the proxy will forward the GET request to, along with a `SignedMessage` for authentication and validation.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub(crate) struct HttpGetPayload {
+    uri: Url,
     pub(crate) signed_message: SignedMessage,
 }
 
@@ -297,7 +299,7 @@ async fn proxy_http_get(
 
     let original_req_uri = req.uri().clone();
 
-    if let Err(e) = modify_request_uri(&mut req, proxy_route).await {
+    if let Err(e) = modify_request_uri(&mut req, &payload, proxy_route).await {
         log::error!(
             "{}",
             log_format!(
@@ -356,20 +358,19 @@ async fn proxy_http_get(
     Ok(res)
 }
 
-/// Modifies the URI of an HTTP request to replace the base URI with the one specified in `ProxyRoute`
-/// while preserving the original request's path and query parameters.
+/// Modifies the URI of an HTTP request by replacing it to outbound URI specified in `ProxyRoute`,
+/// while incorporating the path and query parameters from the payload's URI.
 async fn modify_request_uri(
     req: &mut Request<Body>,
+    payload: &HttpGetPayload,
     proxy_route: &ProxyRoute,
 ) -> GenericResult<()> {
     let mut proxy_outbound_parts = proxy_route.outbound_route.parse::<Uri>()?.into_parts();
 
-    let path_and_query = PathAndQuery::from_str(
-        req.uri()
-            .clone()
-            .path_and_query()
-            .map_or("/", |pq| pq.as_str()),
-    )?;
+    let payload_uri: Uri = payload.uri.as_str().parse()?;
+
+    let path_and_query =
+        PathAndQuery::from_str(payload_uri.path_and_query().map_or("/", |pq| pq.as_str()))?;
     // Append the path and query from the original request URI to the proxy outbound URI.
     proxy_outbound_parts.path_and_query = Some(path_and_query);
 
@@ -637,7 +638,7 @@ async fn test_parse_json_rpc_payload() {
 #[tokio::test]
 async fn test_parse_http_get_payload() {
     let serialized_payload = json!({
-        "url": "http://example.com",
+        "uri": "https://example.com/test-path",
         "signed_message": {
             "coin_ticker": "BTC",
             "address": "dummy-value",
@@ -664,6 +665,7 @@ async fn test_parse_http_get_payload() {
     let header_value = req.headers().get("accept").unwrap();
 
     let expected_payload = HttpGetPayload {
+        uri: Url::from_str("https://example.com/test-path").unwrap(),
         signed_message: SignedMessage {
             coin_ticker: String::from("BTC"),
             address: String::from("dummy-value"),
@@ -678,21 +680,33 @@ async fn test_parse_http_get_payload() {
 
 #[tokio::test]
 async fn test_modify_request_uri() {
-    let orig_uri_str = "https://proxy.example:3535/api/v2/item/0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB/1?chain=eth&format=decimal&normalizeMetadata=true&media_items=false";
+    let orig_uri_str = "https://proxy.example:3535/test-inbound";
     let mut req = Request::builder()
         .uri(orig_uri_str)
         .body(Body::empty())
         .unwrap();
 
+    let payload = HttpGetPayload {
+        uri: Url::from_str("https://proxy.example:3535/api/v2/item/0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB/1?chain=eth&format=decimal&normalizeMetadata=true&media_items=false").unwrap(),
+        signed_message: SignedMessage {
+            coin_ticker: String::from("BTC"),
+            address: String::from("dummy-value"),
+            timestamp_message: 1655320000,
+            signature: String::from("dummy-value"),
+        },
+    };
+
     let proxy_route = ProxyRoute {
-        inbound_route: String::new(),
+        inbound_route: String::from_str("/test-inbound").unwrap(),
         outbound_route: "http://localhost:8000".to_string(),
         proxy_type: ProxyType::HttpGet,
         authorized: false,
         allowed_methods: vec![],
     };
 
-    modify_request_uri(&mut req, &proxy_route).await.unwrap();
+    modify_request_uri(&mut req, &payload, &proxy_route)
+        .await
+        .unwrap();
 
     assert_eq!(
         req.uri(),
