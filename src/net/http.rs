@@ -213,15 +213,16 @@ async fn proxy_eth(
     let original_req_uri = req.uri().clone();
     *req.uri_mut() = match proxy_route.outbound_route.parse() {
         Ok(uri) => uri,
-        Err(_) => {
+        Err(e) => {
             log::error!(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
                     payload.signed_message.address,
                     original_req_uri,
-                    "Error type casting value of {} into Uri, returning 500.",
-                    proxy_route.outbound_route
+                    "Error type casting value of {} into Uri: {}, returning 500.",
+                    proxy_route.outbound_route,
+                    e
                 )
             );
             return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
@@ -255,15 +256,16 @@ async fn proxy_eth(
     let target_uri = req.uri().clone();
     let res = match client.request(req).await {
         Ok(t) => t,
-        Err(_) => {
+        Err(e) => {
             log::warn!(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
                     payload.signed_message.address,
                     original_req_uri,
-                    "Couldn't reach {}, returning 503.",
-                    target_uri
+                    "Couldn't reach {}: {}. Returning 503.",
+                    target_uri,
+                    e
                 )
             );
             return response_by_status(StatusCode::SERVICE_UNAVAILABLE);
@@ -340,15 +342,16 @@ async fn proxy_http_get(
     let target_uri = req.uri().clone();
     let res = match client.request(req).await {
         Ok(t) => t,
-        Err(_) => {
+        Err(e) => {
             log::warn!(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
                     payload.signed_message.address,
                     original_req_uri,
-                    "Couldn't reach {}, returning 503.",
-                    target_uri
+                    "Couldn't reach {}: {}. Returning 503.",
+                    target_uri,
+                    e
                 )
             );
             return response_by_status(StatusCode::SERVICE_UNAVAILABLE);
