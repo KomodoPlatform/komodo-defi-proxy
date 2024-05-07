@@ -326,6 +326,7 @@ async fn proxy_http_get(
         header::TRANSFER_ENCODING,
         header::TRAILER,
         header::UPGRADE,
+        header::CONTENT_LENGTH,
         header::HeaderName::from_static("keep-alive"),
     ] {
         req.headers_mut().remove(key);
