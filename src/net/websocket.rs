@@ -12,7 +12,7 @@ use crate::{
     ctx::AppConfig,
     http::{response_by_status, JsonRpcPayload},
     log_format,
-    server::validation_middleware_eth,
+    server::validation_middleware_json_rpc,
     GenericResult,
 };
 
@@ -174,7 +174,7 @@ pub(crate) async fn socket_handler(
                                                         }
 
                                                         // TODO add general validation_middleware support
-                                                        match validation_middleware_eth(
+                                                        match validation_middleware_json_rpc(
                                                             &cfg,
                                                             &payload,
                                                             &proxy_route,

@@ -149,7 +149,6 @@ async fn generate_payload_from_req(
     }
 }
 
-// TODO handle eth and nft features
 async fn proxy(
     cfg: &AppConfig,
     req: Request<Body>,

@@ -43,25 +43,12 @@ impl RateLimitOperations for Db {
         address: &str,
         expire_time: usize,
     ) -> GenericResult<()> {
-        if !self.key_exists(db).await? {
-            pipe.hset(db, address, "1")
-                .cmd("EXPIRE")
-                .arg(db)
-                .arg(expire_time)
-                .arg("XX")
-                .query_async(&mut self.connection)
-                .await?;
-        } else {
-            pipe.cmd("HINCRBY")
-                .arg(db)
-                .arg(&[address, "1"])
-                .cmd("EXPIRE")
-                .arg(db)
-                .arg(expire_time)
-                .arg("XX")
-                .query_async(&mut self.connection)
-                .await?;
-        }
+        // Atomic operation, which means it increments the value safely even when multiple clients are modifying the counter simultaneously.
+        pipe.atomic()
+            .hincr(db, address, 1) // Increment the hash value or create it if it doesn't exist
+            .expire(db, expire_time) // Set or reset the expiration time
+            .query_async(&mut self.connection)
+            .await?;
 
         Ok(())
     }

@@ -5,13 +5,16 @@ use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode, Uri};
 
-use crate::address_status::AddressStatusOperations;
+use crate::address_status::{AddressStatus, AddressStatusOperations};
 use crate::ctx::ProxyRoute;
 use crate::db::Db;
-use crate::http::{http_handler, response_by_status, JsonRpcPayload, PayloadData, X_FORWARDED_FOR};
+use crate::http::{
+    http_handler, response_by_status, HttpGetPayload, JsonRpcPayload, PayloadData, X_FORWARDED_FOR,
+};
 use crate::log_format;
 use crate::proof_of_funding::{verify_message_and_balance, ProofOfFundingError};
 use crate::rate_limiter::RateLimitOperations;
+use crate::sign::SignOps;
 use crate::websocket::{should_upgrade_to_socket_conn, socket_handler};
 use crate::{ctx::AppConfig, GenericError, GenericResult};
 
@@ -83,16 +86,15 @@ pub(crate) async fn validation_middleware(
 ) -> Result<(), StatusCode> {
     match payload {
         PayloadData::JsonRpc(payload) => {
-            validation_middleware_eth(cfg, payload, proxy_route, req_uri, remote_addr).await
+            validation_middleware_json_rpc(cfg, payload, proxy_route, req_uri, remote_addr).await
         }
-        PayloadData::HttpGet(_payload) => {
-            // TODO add validation_middleware for nft
-            Ok(())
+        PayloadData::HttpGet(payload) => {
+            validation_middleware_http_get(cfg, payload, proxy_route, req_uri, remote_addr).await
         }
     }
 }
 
-pub(crate) async fn validation_middleware_eth(
+pub(crate) async fn validation_middleware_json_rpc(
     cfg: &AppConfig,
     payload: &JsonRpcPayload,
     proxy_route: &ProxyRoute,
@@ -105,9 +107,9 @@ pub(crate) async fn validation_middleware_eth(
         .read_address_status(&payload.signed_message.address)
         .await
     {
-        crate::address_status::AddressStatus::Trusted => Ok(()),
-        crate::address_status::AddressStatus::Blocked => Err(StatusCode::FORBIDDEN),
-        crate::address_status::AddressStatus::None => {
+        AddressStatus::Trusted => Ok(()),
+        AddressStatus::Blocked => Err(StatusCode::FORBIDDEN),
+        AddressStatus::None => {
             let signed_message_status = verify_message_and_balance(cfg, payload, proxy_route).await;
 
             if let Err(ProofOfFundingError::InvalidSignedMessage) = signed_message_status {
@@ -129,6 +131,7 @@ pub(crate) async fn validation_middleware_eth(
                 payload.signed_message.coin_ticker, payload.signed_message.address
             );
 
+            // TODO impl Optional rate limiter in ProxyRoute type and use it. if None, use cfg.rate_limiter as Default
             match db.rate_exceeded(&rate_limiter_key, &cfg.rate_limiter).await {
                 Ok(false) => {}
                 _ => {
@@ -154,8 +157,8 @@ pub(crate) async fn validation_middleware_eth(
                                     payload.signed_message.address,
                                     req_uri,
                                     "Wallet {} has insufficient balance for coin {}, returning 406.",
+                                    payload.signed_message.address,
                                     payload.signed_message.coin_ticker,
-                                    payload.signed_message.address
                                 )
                             );
 
@@ -189,6 +192,109 @@ pub(crate) async fn validation_middleware_eth(
                         "Rate incrementing failed."
                     )
                 );
+            };
+
+            Ok(())
+        }
+    }
+}
+
+pub(crate) async fn validation_middleware_http_get(
+    cfg: &AppConfig,
+    payload: &HttpGetPayload,
+    _proxy_route: &ProxyRoute,
+    req_uri: &Uri,
+    remote_addr: &SocketAddr,
+) -> Result<(), StatusCode> {
+    let mut db = Db::create_instance(cfg).await;
+
+    match db
+        .read_address_status(&payload.signed_message.address)
+        .await
+    {
+        AddressStatus::Trusted => Ok(()),
+        AddressStatus::Blocked => Err(StatusCode::FORBIDDEN),
+        AddressStatus::None => {
+            match payload.signed_message.verify_message() {
+                Ok(true) => {}
+                Ok(false) => {
+                    log::warn!(
+                        "{}",
+                        log_format!(
+                            remote_addr.ip(),
+                            payload.signed_message.address,
+                            req_uri,
+                            "Request has invalid signed message, returning 401"
+                        )
+                    );
+
+                    return Err(StatusCode::UNAUTHORIZED);
+                }
+                Err(e) => {
+                    log::error!(
+                        "{}",
+                        log_format!(
+                            remote_addr.ip(),
+                            payload.signed_message.address,
+                            req_uri,
+                            "verify_message failed in coin {}: {}, returning 500.",
+                            payload.signed_message.coin_ticker,
+                            e
+                        )
+                    );
+                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                }
+            }
+
+            let rate_limiter_key = format!(
+                "{}:{}",
+                payload.signed_message.coin_ticker, payload.signed_message.address
+            );
+
+            // TODO impl Optional rate limiter in ProxyRoute type and use it. if None, use cfg.rate_limiter as Default
+            match db.rate_exceeded(&rate_limiter_key, &cfg.rate_limiter).await {
+                Ok(false) => {}
+                Ok(true) => {
+                    log::warn!(
+                        "{}",
+                        log_format!(
+                            remote_addr.ip(),
+                            payload.signed_message.address,
+                            req_uri,
+                            "Rate exceed for {}, returning 406.",
+                            rate_limiter_key,
+                        )
+                    );
+                }
+                Err(e) => {
+                    log::error!(
+                        "{}",
+                        log_format!(
+                            remote_addr.ip(),
+                            payload.signed_message.address,
+                            req_uri,
+                            "Rate exceeded check failed in coin {}: {}, returning 500.",
+                            payload.signed_message.coin_ticker,
+                            e
+                        )
+                    );
+                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                }
+            }
+
+            if let Err(e) = db.rate_address(rate_limiter_key).await {
+                log::error!(
+                    "{}",
+                    log_format!(
+                        remote_addr.ip(),
+                        payload.signed_message.address,
+                        req_uri,
+                        "Rate incrementing failed in coin {}: {}, returning 500.",
+                        payload.signed_message.coin_ticker,
+                        e
+                    )
+                );
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
             };
 
             Ok(())
