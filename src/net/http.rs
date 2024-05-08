@@ -159,7 +159,7 @@ async fn proxy(
 ) -> GenericResult<Response<Body>> {
     match payload {
         PayloadData::JsonRpc(payload) => {
-            proxy_eth(cfg, req, remote_addr, payload, x_forwarded_for, proxy_route).await
+            proxy_json_rpc(cfg, req, remote_addr, payload, x_forwarded_for, proxy_route).await
         }
         PayloadData::HttpGet(payload) => {
             proxy_http_get(cfg, req, remote_addr, payload, x_forwarded_for, proxy_route).await
@@ -167,7 +167,7 @@ async fn proxy(
     }
 }
 
-async fn proxy_eth(
+async fn proxy_json_rpc(
     cfg: &AppConfig,
     mut req: Request<Body>,
     remote_addr: &SocketAddr,
