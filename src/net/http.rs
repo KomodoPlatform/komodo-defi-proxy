@@ -69,14 +69,14 @@ pub(crate) async fn insert_jwt_to_http_header(
     Ok(())
 }
 
-/// Asynchronously parses an HTTP request's body into a specified type `T`, modifying the request
-/// to have an empty body if the method is `GET`, and returning the original body otherwise.
-/// Ensures that the body is not empty before attempting deserialization into the non-optional type `T`.
-async fn parse_payload<T>(req: Request<Body>) -> GenericResult<(Request<Body>, T)>
+/// Asynchronously parses an HTTP request's body into a specified type `T`. If the request method is `GET`,
+/// the function modifies the request to have an empty body. For other methods, it retains the original body.
+/// The function ensures that the body is not empty before attempting deserialization into the non-optional type `T`.
+async fn parse_payload<T>(req: Request<Body>, get_req: bool) -> GenericResult<(Request<Body>, T)>
 where
     T: serde::de::DeserializeOwned,
 {
-    let (parts, body) = req.into_parts();
+    let (mut parts, body) = req.into_parts();
     let body_bytes = hyper::body::to_bytes(body).await?;
 
     if body_bytes.is_empty() {
@@ -85,7 +85,8 @@ where
 
     let payload: T = serde_json::from_slice(&body_bytes)?;
 
-    let new_req = if parts.method == Method::GET {
+    let new_req = if get_req {
+        parts.method = Method::GET;
         Request::from_parts(parts, Body::empty())
     } else {
         Request::from_parts(parts, Body::from(body_bytes))
@@ -94,7 +95,7 @@ where
     Ok((new_req, payload))
 }
 
-/// Represents a JSON RPC payload parsed from a proxy request. It combines standard JSON RPC method call
+/// Represents a JSON-RPC Call payload parsed from a proxy request. It combines standard JSON RPC method call
 /// fields with a `SignedMessage` for authentication and validation by the proxy.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub(crate) struct JsonRpcPayload {
@@ -139,11 +140,11 @@ async fn generate_payload_from_req(
 ) -> GenericResult<(Request<Body>, PayloadData)> {
     match proxy_type {
         ProxyType::JsonRpc => {
-            let (req, payload) = parse_payload::<JsonRpcPayload>(req).await?;
+            let (req, payload) = parse_payload::<JsonRpcPayload>(req, false).await?;
             Ok((req, PayloadData::JsonRpc(payload)))
         }
         ProxyType::HttpGet => {
-            let (req, payload) = parse_payload::<HttpGetPayload>(req).await?;
+            let (req, payload) = parse_payload::<HttpGetPayload>(req, true).await?;
             Ok((req, PayloadData::HttpGet(payload)))
         }
     }
@@ -334,7 +335,7 @@ async fn proxy_http_get(
     req.headers_mut()
         .insert(HeaderName::from_static(X_FORWARDED_FOR), x_forwarded_for);
     req.headers_mut()
-        .insert(header::ACCEPT, APPLICATION_JSON.parse()?);
+        .insert(header::CONTENT_TYPE, APPLICATION_JSON.parse()?);
 
     let https = HttpsConnector::new();
     let client = hyper::Client::builder().build(https);
@@ -611,7 +612,8 @@ async fn test_parse_json_rpc_payload() {
         "dummy-value".parse().unwrap(),
     );
 
-    let (mut req, payload): (Request<Body>, JsonRpcPayload) = parse_payload(req).await.unwrap();
+    let (mut req, payload): (Request<Body>, JsonRpcPayload) =
+        parse_payload(req, false).await.unwrap();
 
     let body_bytes = hyper::body::to_bytes(req.body_mut()).await.unwrap();
     assert!(
@@ -657,7 +659,8 @@ async fn test_parse_http_get_payload() {
         APPLICATION_JSON.parse().unwrap(),
     );
 
-    let (mut req, payload): (Request<Body>, HttpGetPayload) = parse_payload(req).await.unwrap();
+    let (mut req, payload): (Request<Body>, HttpGetPayload) =
+        parse_payload(req, true).await.unwrap();
 
     let body_bytes = hyper::body::to_bytes(req.body_mut()).await.unwrap();
     assert!(

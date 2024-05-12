@@ -41,7 +41,7 @@ pub(crate) struct ProxyRoute {
     pub(crate) inbound_route: String,
     // The target URL to which requests are forwarded.
     pub(crate) outbound_route: String,
-    // The type of proxying to perform (e.g., JSON RPC, HTTP GET).
+    // The type of proxying to perform (e.g., JSON-RPC Call, HTTP GET).
     pub(crate) proxy_type: ProxyType,
     // Whether authorization is required for this route.
     #[serde(default)]
@@ -51,13 +51,13 @@ pub(crate) struct ProxyRoute {
     pub(crate) allowed_methods: Vec<String>,
 }
 
-/// Enumerates different types of proxy operations supported, such as JSON RPC and HTTP GET.
+/// Enumerates different types of proxy operations supported, such as JSON-RPC Call over HTTP POST and HTTP GET.
 /// This helps in applying specific handling logic based on the proxy type.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ProxyType {
-    JsonRpc,
-    HttpGet,
+    JsonRpc, // JSON-RPC call using HTTP POST
+    HttpGet, // Standard HTTP GET request
 }
 
 /// Configuration for rate limiting to manage the number of requests allowed over specified time intervals.
