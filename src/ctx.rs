@@ -17,19 +17,19 @@ pub(crate) fn get_app_config() -> &'static AppConfig {
 /// Configuration settings for the application, loaded typically from a JSON configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct AppConfig {
-    // Optional server port to listen on. If None in config file, then 5000 is default.
+    /// Optional server port to listen on. If None in config file, then 5000 is default.
     pub(crate) port: Option<u16>,
-    // Redis database connection string.
+    /// Redis database connection string.
     pub(crate) redis_connection_string: String,
-    // File path to the public key used for cryptographic operations.
+    /// File path to the public key used for cryptographic operations.
     pub(crate) pubkey_path: String,
-    // File path to the private key used for cryptographic operations.
+    /// File path to the private key used for cryptographic operations.
     pub(crate) privkey_path: String,
-    // Optional token expiration time in seconds. If None then 3600 is default.
+    /// Optional token expiration time in seconds. If None then 3600 is default.
     pub(crate) token_expiration_time: Option<i64>,
-    // Routing configurations for proxying requests.
+    /// Routing configurations for proxying requests.
     pub(crate) proxy_routes: Vec<ProxyRoute>,
-    // Rate limiting settings for request handling.
+    /// Default rate limiting settings for request handling.
     pub(crate) rate_limiter: RateLimiter,
 }
 
@@ -37,18 +37,21 @@ pub(crate) struct AppConfig {
 /// based on a specified proxy type and additional authorization and method filtering criteria.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct ProxyRoute {
-    // The incoming route pattern.
+    /// The incoming route pattern.
     pub(crate) inbound_route: String,
-    // The target URL to which requests are forwarded.
+    /// The target URL to which requests are forwarded.
     pub(crate) outbound_route: String,
-    // The type of proxying to perform (e.g., JSON-RPC Call, HTTP GET).
+    /// The type of proxying to perform (e.g., JSON-RPC Call, HTTP GET).
     pub(crate) proxy_type: ProxyType,
-    // Whether authorization is required for this route.
+    /// Whether authorization is required for this route.
     #[serde(default)]
     pub(crate) authorized: bool,
     // Specific HTTP methods allowed for this route.
     #[serde(default)]
     pub(crate) allowed_methods: Vec<String>,
+    /// Optional custom rate limiter configuration for this route. If provided,
+    /// this configuration will be used instead of the default rate limiting settings.
+    pub(crate) rate_limiter: Option<RateLimiter>,
 }
 
 /// Enumerates different types of proxy operations supported, such as JSON-RPC Call over HTTP POST and HTTP GET.
@@ -112,6 +115,7 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
                 proxy_type: ProxyType::JsonRpc,
                 authorized: false,
                 allowed_methods: Vec::default(),
+                rate_limiter: None,
             },
             ProxyRoute {
                 inbound_route: String::from("/test-2"),
@@ -119,6 +123,7 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
                 proxy_type: ProxyType::JsonRpc,
                 authorized: false,
                 allowed_methods: Vec::default(),
+                rate_limiter: None,
             },
             ProxyRoute {
                 inbound_route: String::from("/nft-test"),
@@ -126,9 +131,16 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
                 proxy_type: ProxyType::HttpGet,
                 authorized: false,
                 allowed_methods: Vec::default(),
+                rate_limiter: Some(RateLimiter {
+                    rp_1_min: 60,
+                    rp_5_min: 60,
+                    rp_15_min: 60,
+                    rp_30_min: 60,
+                    rp_60_min: 60,
+                }),
             },
         ]),
-        rate_limiter: ctx::RateLimiter {
+        rate_limiter: RateLimiter {
             rp_1_min: 555,
             rp_5_min: 555,
             rp_15_min: 555,
@@ -152,21 +164,30 @@ fn test_app_config_serialzation_and_deserialization() {
                 "outbound_route": "https://komodoplatform.com",
                 "proxy_type":"json_rpc",
                 "authorized": false,
-                "allowed_methods": []
+                "allowed_methods": [],
+                "rate_limiter": null
             },
             {
                 "inbound_route": "/test-2",
                 "outbound_route": "https://atomicdex.io",
                 "proxy_type":"json_rpc",
                 "authorized": false,
-                "allowed_methods": []
+                "allowed_methods": [],
+                "rate_limiter": null
             },
             {
                 "inbound_route": "/nft-test",
                 "outbound_route": "https://nft.proxy",
                 "proxy_type":"http_get",
                 "authorized": false,
-                "allowed_methods": []
+                "allowed_methods": [],
+                "rate_limiter": {
+                    "rp_1_min": 60,
+                    "rp_5_min": 60,
+                    "rp_15_min": 60,
+                    "rp_30_min": 60,
+                    "rp_60_min": 60
+                }
             }
         ],
         "rate_limiter": {

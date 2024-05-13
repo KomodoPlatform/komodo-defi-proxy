@@ -708,6 +708,7 @@ async fn test_modify_request_uri() {
         proxy_type: ProxyType::HttpGet,
         authorized: false,
         allowed_methods: vec![],
+        rate_limiter: None,
     };
 
     modify_request_uri(&mut req, &payload, &proxy_route)

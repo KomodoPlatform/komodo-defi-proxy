@@ -5,8 +5,9 @@ use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode, Uri};
 
+use super::{GenericError, GenericResult};
 use crate::address_status::{AddressStatus, AddressStatusOperations};
-use crate::ctx::ProxyRoute;
+use crate::ctx::{AppConfig, ProxyRoute};
 use crate::db::Db;
 use crate::http::{
     http_handler, response_by_status, HttpGetPayload, JsonRpcPayload, PayloadData, X_FORWARDED_FOR,
@@ -16,7 +17,6 @@ use crate::proof_of_funding::{verify_message_and_balance, ProofOfFundingError};
 use crate::rate_limiter::RateLimitOperations;
 use crate::sign::SignOps;
 use crate::websocket::{should_upgrade_to_socket_conn, socket_handler};
-use crate::{ctx::AppConfig, GenericError, GenericResult};
 
 #[macro_export]
 macro_rules! log_format {
@@ -76,7 +76,6 @@ async fn connection_handler(
     }
 }
 
-// TODO handle eth and nft features
 pub(crate) async fn validation_middleware(
     cfg: &AppConfig,
     payload: &PayloadData,
@@ -131,8 +130,11 @@ pub(crate) async fn validation_middleware_json_rpc(
                 payload.signed_message.coin_ticker, payload.signed_message.address
             );
 
-            // TODO impl Optional rate limiter in ProxyRoute type and use it. if None, use cfg.rate_limiter as Default
-            match db.rate_exceeded(&rate_limiter_key, &cfg.rate_limiter).await {
+            let rate_limiter = proxy_route
+                .rate_limiter
+                .as_ref()
+                .unwrap_or(&cfg.rate_limiter);
+            match db.rate_exceeded(&rate_limiter_key, rate_limiter).await {
                 Ok(false) => {}
                 _ => {
                     log::warn!(
@@ -202,7 +204,7 @@ pub(crate) async fn validation_middleware_json_rpc(
 pub(crate) async fn validation_middleware_http_get(
     cfg: &AppConfig,
     payload: &HttpGetPayload,
-    _proxy_route: &ProxyRoute,
+    proxy_route: &ProxyRoute,
     req_uri: &Uri,
     remote_addr: &SocketAddr,
 ) -> Result<(), StatusCode> {
@@ -251,8 +253,11 @@ pub(crate) async fn validation_middleware_http_get(
                 payload.signed_message.coin_ticker, payload.signed_message.address
             );
 
-            // TODO impl Optional rate limiter in ProxyRoute type and use it. if None, use cfg.rate_limiter as Default
-            match db.rate_exceeded(&rate_limiter_key, &cfg.rate_limiter).await {
+            let rate_limiter = proxy_route
+                .rate_limiter
+                .as_ref()
+                .unwrap_or(&cfg.rate_limiter);
+            match db.rate_exceeded(&rate_limiter_key, rate_limiter).await {
                 Ok(false) => {}
                 Ok(true) => {
                     log::warn!(
@@ -265,6 +270,7 @@ pub(crate) async fn validation_middleware_http_get(
                             rate_limiter_key,
                         )
                     );
+                    return Err(StatusCode::NOT_ACCEPTABLE);
                 }
                 Err(e) => {
                     log::error!(

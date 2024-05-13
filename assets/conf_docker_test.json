@@ -10,7 +10,14 @@
       "outbound_route": "https://nft.proxy",
       "proxy_type": "http_get",
       "authorized": false,
-      "allowed_methods": []
+      "allowed_methods": [],
+      "rate_limiter": {
+        "rp_1_min": 60,
+        "rp_5_min": 250,
+        "rp_15_min": 800,
+        "rp_30_min": 1500,
+        "rp_60_min": 3000
+      }
     }
   ],
   "rate_limiter": {

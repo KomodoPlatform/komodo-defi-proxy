@@ -10,21 +10,30 @@
       "outbound_route": "https://komodoplatform.com",
       "proxy_type": "json_rpc",
       "authorized": false,
-      "allowed_methods": []
+      "allowed_methods": [],
+      "rate_limiter": null
     },
     {
       "inbound_route": "/test-2",
       "outbound_route": "https://atomicdex.io",
       "proxy_type": "json_rpc",
       "authorized": false,
-      "allowed_methods": []
+      "allowed_methods": [],
+      "rate_limiter": null
     },
     {
       "inbound_route": "/nft-test",
       "outbound_route": "https://nft.proxy",
       "proxy_type": "http_get",
       "authorized": false,
-      "allowed_methods": []
+      "allowed_methods": [],
+      "rate_limiter": {
+        "rp_1_min": 60,
+        "rp_5_min": 60,
+        "rp_15_min": 60,
+        "rp_30_min": 60,
+        "rp_60_min": 60
+      }
     }
   ],
   "rate_limiter": {
