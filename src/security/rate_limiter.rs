@@ -13,13 +13,13 @@ pub(crate) const DB_RP_60_MIN: &str = "rp:60_min";
 
 #[async_trait]
 pub(crate) trait RateLimitOperations {
-    async fn upsert_address_rate_in_pipe(
+    fn upsert_address_rate_in_pipe(
         &mut self,
         pipe: &mut Pipeline,
         db: &str,
         address: &str,
         expire_time: usize,
-    ) -> GenericResult<()>;
+    );
     async fn rate_address(&mut self, address: String) -> GenericResult<()>;
     async fn did_exceed_in_single_time_frame(
         &mut self,
@@ -36,38 +36,29 @@ pub(crate) trait RateLimitOperations {
 
 #[async_trait]
 impl RateLimitOperations for Db {
-    async fn upsert_address_rate_in_pipe(
+    fn upsert_address_rate_in_pipe(
         &mut self,
         pipe: &mut Pipeline,
         db: &str,
         address: &str,
         expire_time: usize,
-    ) -> GenericResult<()> {
+    ) {
         // Atomic operation, which means it increments the value safely even when multiple clients are modifying the counter simultaneously.
         pipe.atomic()
             .hincr(db, address, 1) // Increment the hash value or create it if it doesn't exist
-            .expire(db, expire_time) // Set or reset the expiration time
-            .query_async(&mut self.connection)
-            .await?;
-
-        Ok(())
+            .expire(db, expire_time); // Set or reset the expiration time
     }
 
     /// semi-lazy IP rate implementation for 5 different time frames.
     async fn rate_address(&mut self, address: String) -> GenericResult<()> {
         let mut pipe = redis::pipe();
 
-        self.upsert_address_rate_in_pipe(&mut pipe, DB_RP_1_MIN, &address, 60)
-            .await?;
-        self.upsert_address_rate_in_pipe(&mut pipe, DB_RP_5_MIN, &address, 300)
-            .await?;
-        self.upsert_address_rate_in_pipe(&mut pipe, DB_RP_15_MIN, &address, 900)
-            .await?;
-        self.upsert_address_rate_in_pipe(&mut pipe, DB_RP_30_MIN, &address, 1800)
-            .await?;
-        self.upsert_address_rate_in_pipe(&mut pipe, DB_RP_60_MIN, &address, 3600)
-            .await?;
-
+        self.upsert_address_rate_in_pipe(&mut pipe, DB_RP_1_MIN, &address, 60);
+        self.upsert_address_rate_in_pipe(&mut pipe, DB_RP_5_MIN, &address, 300);
+        self.upsert_address_rate_in_pipe(&mut pipe, DB_RP_15_MIN, &address, 900);
+        self.upsert_address_rate_in_pipe(&mut pipe, DB_RP_30_MIN, &address, 1800);
+        self.upsert_address_rate_in_pipe(&mut pipe, DB_RP_60_MIN, &address, 3600);
+        // Execute the pipeline once after setting all commands
         pipe.query_async(&mut self.connection).await?;
 
         Ok(())

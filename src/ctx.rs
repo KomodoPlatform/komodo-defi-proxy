@@ -1,9 +1,9 @@
+use once_cell::sync::OnceCell;
+use proxy::ProxyType;
+use serde::{Deserialize, Serialize};
 use std::env;
 
-use once_cell::sync::OnceCell;
-use serde::{Deserialize, Serialize};
-
-use super::*;
+pub(crate) use super::*;
 
 const DEFAULT_TOKEN_EXPIRATION_TIME: i64 = 3600;
 static CONFIG: OnceCell<AppConfig> = OnceCell::new();
@@ -52,15 +52,6 @@ pub(crate) struct ProxyRoute {
     /// Optional custom rate limiter configuration for this route. If provided,
     /// this configuration will be used instead of the default rate limiting settings.
     pub(crate) rate_limiter: Option<RateLimiter>,
-}
-
-/// Enumerates different types of proxy operations supported, such as JSON-RPC Call over HTTP POST and HTTP GET.
-/// This helps in applying specific handling logic based on the proxy type.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ProxyType {
-    JsonRpc, // JSON-RPC call using HTTP POST
-    HttpGet, // Standard HTTP GET request
 }
 
 /// Configuration for rate limiting to manage the number of requests allowed over specified time intervals.
@@ -112,7 +103,7 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
             ProxyRoute {
                 inbound_route: String::from("/test"),
                 outbound_route: String::from("https://komodoplatform.com"),
-                proxy_type: ProxyType::JsonRpc,
+                proxy_type: ProxyType::Quicknode,
                 authorized: false,
                 allowed_methods: Vec::default(),
                 rate_limiter: None,
@@ -120,7 +111,7 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
             ProxyRoute {
                 inbound_route: String::from("/test-2"),
                 outbound_route: String::from("https://atomicdex.io"),
-                proxy_type: ProxyType::JsonRpc,
+                proxy_type: ProxyType::Quicknode,
                 authorized: false,
                 allowed_methods: Vec::default(),
                 rate_limiter: None,
@@ -128,7 +119,7 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
             ProxyRoute {
                 inbound_route: String::from("/nft-test"),
                 outbound_route: String::from("https://nft.proxy"),
-                proxy_type: ProxyType::HttpGet,
+                proxy_type: ProxyType::Moralis,
                 authorized: false,
                 allowed_methods: Vec::default(),
                 rate_limiter: Some(RateLimiter {
@@ -162,7 +153,7 @@ fn test_app_config_serialzation_and_deserialization() {
             {
                 "inbound_route": "/test",
                 "outbound_route": "https://komodoplatform.com",
-                "proxy_type":"json_rpc",
+                "proxy_type":"quicknode",
                 "authorized": false,
                 "allowed_methods": [],
                 "rate_limiter": null
@@ -170,7 +161,7 @@ fn test_app_config_serialzation_and_deserialization() {
             {
                 "inbound_route": "/test-2",
                 "outbound_route": "https://atomicdex.io",
-                "proxy_type":"json_rpc",
+                "proxy_type":"quicknode",
                 "authorized": false,
                 "allowed_methods": [],
                 "rate_limiter": null
@@ -178,7 +169,7 @@ fn test_app_config_serialzation_and_deserialization() {
             {
                 "inbound_route": "/nft-test",
                 "outbound_route": "https://nft.proxy",
-                "proxy_type":"http_get",
+                "proxy_type":"moralis",
                 "authorized": false,
                 "allowed_methods": [],
                 "rate_limiter": {

@@ -10,8 +10,7 @@ mod db;
 mod http;
 #[path = "security/jwt.rs"]
 mod jwt;
-#[path = "security/proof_of_funding.rs"]
-mod proof_of_funding;
+
 #[path = "security/rate_limiter.rs"]
 mod rate_limiter;
 #[path = "net/rpc.rs"]
@@ -22,6 +21,8 @@ mod server;
 mod sign;
 #[path = "net/websocket.rs"]
 mod websocket;
+
+mod proxy;
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[global_allocator]

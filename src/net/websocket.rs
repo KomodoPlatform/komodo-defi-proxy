@@ -10,9 +10,9 @@ use tokio_tungstenite::{
 
 use crate::{
     ctx::AppConfig,
-    http::{response_by_status, JsonRpcPayload},
+    http::response_by_status,
     log_format,
-    server::validation_middleware_json_rpc,
+    proxy::{validation_middleware_quicknode, QuicknodePayload},
     GenericResult,
 };
 
@@ -137,7 +137,7 @@ pub(crate) async fn socket_handler(
                                             match msg {
                                                 Some(Ok(msg)) => {
                                                     if let Message::Text(msg) = msg {
-                                                         let payload: JsonRpcPayload = match serde_json::from_str(&msg) {
+                                                         let payload: QuicknodePayload = match serde_json::from_str(&msg) {
                                                              Ok(t) => t,
                                                              Err(e) => {
                                                                  if let Err(e) = inbound_socket.send(format!("Invalid payload. {e}").into()).await {
@@ -174,7 +174,7 @@ pub(crate) async fn socket_handler(
                                                         }
 
                                                         // TODO add general validation_middleware support
-                                                        match validation_middleware_json_rpc(
+                                                        match validation_middleware_quicknode(
                                                             &cfg,
                                                             &payload,
                                                             &proxy_route,
