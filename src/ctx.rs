@@ -103,10 +103,10 @@ impl AppConfig {
 #[cfg(test)]
 pub(crate) fn get_app_config_test_instance() -> AppConfig {
     AppConfig {
-        port: Some(5000),
-        redis_connection_string: String::from("dummy-value"),
-        pubkey_path: String::from("dummy-value"),
-        privkey_path: String::from("dummy-value"),
+        port: Some(6150),
+        redis_connection_string: String::from("redis://redis:6379"),
+        pubkey_path: String::from("/usr/src/komodo-defi-proxy/assets/.pubkey_test"),
+        privkey_path: String::from("/usr/src/komodo-defi-proxy/assets/.privkey_test"),
         token_expiration_time: Some(300),
         proxy_routes: Vec::from([
             ProxyRoute {
@@ -133,10 +133,10 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
                 allowed_methods: Vec::default(),
                 rate_limiter: Some(RateLimiter {
                     rp_1_min: 60,
-                    rp_5_min: 60,
-                    rp_15_min: 60,
-                    rp_30_min: 60,
-                    rp_60_min: 60,
+                    rp_5_min: 200,
+                    rp_15_min: 700,
+                    rp_30_min: 1000,
+                    rp_60_min: 2000,
                 }),
             },
         ]),
@@ -153,10 +153,10 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
 #[test]
 fn test_app_config_serialzation_and_deserialization() {
     let json_config = serde_json::json!({
-        "port": 5000,
-        "redis_connection_string": "dummy-value",
-        "pubkey_path": "dummy-value",
-        "privkey_path": "dummy-value",
+        "port": 6150,
+        "redis_connection_string": "redis://redis:6379",
+        "pubkey_path": "/usr/src/komodo-defi-proxy/assets/.pubkey_test",
+        "privkey_path": "/usr/src/komodo-defi-proxy/assets/.privkey_test",
         "token_expiration_time": 300,
         "proxy_routes": [
             {
@@ -183,10 +183,10 @@ fn test_app_config_serialzation_and_deserialization() {
                 "allowed_methods": [],
                 "rate_limiter": {
                     "rp_1_min": 60,
-                    "rp_5_min": 60,
-                    "rp_15_min": 60,
-                    "rp_30_min": 60,
-                    "rp_60_min": 60
+                    "rp_5_min": 200,
+                    "rp_15_min": 700,
+                    "rp_30_min": 1000,
+                    "rp_60_min": 2000
                 }
             }
         ],

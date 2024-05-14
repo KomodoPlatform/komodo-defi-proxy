@@ -1,8 +1,8 @@
 {
-  "port": 5000,
-  "redis_connection_string": "dummy-value",
-  "pubkey_path": "dummy-value",
-  "privkey_path": "dummy-value",
+  "port": 6150,
+  "redis_connection_string": "redis://redis:6379",
+  "pubkey_path": "/usr/src/komodo-defi-proxy/assets/.pubkey_test",
+  "privkey_path": "/usr/src/komodo-defi-proxy/assets/.privkey_test",
   "token_expiration_time": 300,
   "proxy_routes": [
     {
@@ -29,10 +29,10 @@
       "allowed_methods": [],
       "rate_limiter": {
         "rp_1_min": 60,
-        "rp_5_min": 60,
-        "rp_15_min": 60,
-        "rp_30_min": 60,
-        "rp_60_min": 60
+        "rp_5_min": 200,
+        "rp_15_min": 700,
+        "rp_30_min": 1000,
+        "rp_60_min": 2000
       }
     }
   ],

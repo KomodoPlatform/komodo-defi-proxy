@@ -15,6 +15,6 @@ services:
     depends_on:
       - redis
     environment:
-      AUTH_APP_CONFIG_PATH: /usr/src/komodo-defi-proxy/assets/conf_docker_test.json
+      AUTH_APP_CONFIG_PATH: /usr/src/komodo-defi-proxy/assets/.config_test
     volumes:
       - ./assets:/usr/src/komodo-defi-proxy/assets
