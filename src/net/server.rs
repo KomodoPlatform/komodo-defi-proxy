@@ -6,7 +6,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
 
 use super::{GenericError, GenericResult};
-use crate::ctx::AppConfig;
+use crate::ctx::{AppConfig, DEFAULT_PORT};
 use crate::http::{http_handler, response_by_status, X_FORWARDED_FOR};
 use crate::log_format;
 use crate::websocket::{should_upgrade_to_socket_conn, socket_handler};
@@ -72,7 +72,7 @@ async fn connection_handler(
 /// Starts serving the proxy API on the configured port. This function sets up the HTTP server,
 /// binds it to the specified address, and listens for incoming requests.
 pub(crate) async fn serve(cfg: &'static AppConfig) -> GenericResult<()> {
-    let addr = format!("0.0.0.0:{}", cfg.port.unwrap_or(5000)).parse()?;
+    let addr = format!("0.0.0.0:{}", cfg.port.unwrap_or(DEFAULT_PORT)).parse()?;
 
     let handler = make_service_fn(move |c_stream: &AddrStream| {
         let remote_addr = c_stream.remote_addr();

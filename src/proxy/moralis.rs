@@ -313,7 +313,7 @@ async fn test_modify_request_uri() {
         outbound_route: "http://localhost:8000".to_string(),
         proxy_type: ProxyType::Moralis,
         authorized: false,
-        allowed_methods: vec![],
+        allowed_rpc_methods: vec![],
         rate_limiter: None,
     };
 

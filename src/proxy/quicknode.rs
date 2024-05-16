@@ -44,7 +44,7 @@ pub(crate) async fn proxy_quicknode(
     proxy_route: &ProxyRoute,
 ) -> GenericResult<Response<Body>> {
     // check if requested method allowed
-    if !proxy_route.allowed_methods.contains(&payload.method) {
+    if !proxy_route.allowed_rpc_methods.contains(&payload.method) {
         log::warn!(
             "{}",
             log_format!(
