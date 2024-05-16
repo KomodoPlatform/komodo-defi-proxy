@@ -245,7 +245,8 @@ pub(crate) async fn validation_middleware_moralis(
 
 #[tokio::test]
 async fn test_parse_moralis_payload() {
-    use super::parse_payload;
+    use super::{parse_header_payload, X_AUTH_PAYLOAD};
+    use hyper::Method;
 
     let serialized_payload = serde_json::json!({
         "uri": "https://example.com/test-path",
@@ -258,13 +259,17 @@ async fn test_parse_moralis_payload() {
     })
     .to_string();
 
-    let mut req = Request::new(Body::from(serialized_payload));
-    req.headers_mut().insert(
-        HeaderName::from_static("accept"),
-        APPLICATION_JSON.parse().unwrap(),
-    );
+    let req = Request::builder()
+        .method(Method::GET)
+        .header(header::ACCEPT, HeaderValue::from_static(APPLICATION_JSON))
+        .header(
+            X_AUTH_PAYLOAD,
+            HeaderValue::from_str(&serialized_payload).unwrap(),
+        )
+        .body(Body::empty())
+        .unwrap();
 
-    let (mut req, payload) = parse_payload::<MoralisPayload>(req, true).await.unwrap();
+    let (mut req, payload) = parse_header_payload::<MoralisPayload>(req).await.unwrap();
 
     let body_bytes = hyper::body::to_bytes(req.body_mut()).await.unwrap();
     assert!(
@@ -272,7 +277,7 @@ async fn test_parse_moralis_payload() {
         "Body should be empty for GET methods"
     );
 
-    let header_value = req.headers().get("accept").unwrap();
+    let header_value = req.headers().get(header::ACCEPT).unwrap();
 
     let expected_payload = MoralisPayload {
         uri: Url::from_str("https://example.com/test-path").unwrap(),

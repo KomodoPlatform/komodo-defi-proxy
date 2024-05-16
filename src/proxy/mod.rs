@@ -1,13 +1,16 @@
 use crate::ctx::{AppConfig, GenericResult, ProxyRoute};
 use crate::sign::SignedMessage;
 use hyper::header::HeaderValue;
-use hyper::{Body, Method, Request, Response, StatusCode, Uri};
+use hyper::{Body, Request, Response, StatusCode, Uri};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 mod moralis;
 use moralis::{proxy_moralis, validation_middleware_moralis, MoralisPayload};
 mod quicknode;
 pub(crate) use quicknode::{proxy_quicknode, validation_middleware_quicknode, QuicknodePayload};
+
+const X_AUTH_PAYLOAD: &str = "X-Auth-Payload";
 
 /// Enumerates different proxy types supported by the application, focusing on separating feature logic.
 /// This allows for differentiated handling based on what the proxy should do with the request,
@@ -46,11 +49,11 @@ pub(crate) async fn generate_payload_from_req(
 ) -> GenericResult<(Request<Body>, PayloadData)> {
     match proxy_type {
         ProxyType::Quicknode => {
-            let (req, payload) = parse_payload::<QuicknodePayload>(req, false).await?;
+            let (req, payload) = parse_body_payload::<QuicknodePayload>(req).await?;
             Ok((req, PayloadData::Quicknode(payload)))
         }
         ProxyType::Moralis => {
-            let (req, payload) = parse_payload::<MoralisPayload>(req, true).await?;
+            let (req, payload) = parse_header_payload::<MoralisPayload>(req).await?;
             Ok((req, PayloadData::Moralis(payload)))
         }
     }
@@ -94,25 +97,31 @@ pub(crate) async fn validation_middleware(
 /// Asynchronously parses an HTTP request's body into a specified type `T`. If the request method is `GET`,
 /// the function modifies the request to have an empty body. For other methods, it retains the original body.
 /// The function ensures that the body is not empty before attempting deserialization into the non-optional type `T`.
-async fn parse_payload<T>(req: Request<Body>, get_req: bool) -> GenericResult<(Request<Body>, T)>
+async fn parse_body_payload<T>(req: Request<Body>) -> GenericResult<(Request<Body>, T)>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
 {
-    let (mut parts, body) = req.into_parts();
+    let (parts, body) = req.into_parts();
     let body_bytes = hyper::body::to_bytes(body).await?;
-
     if body_bytes.is_empty() {
         return Err("Empty body cannot be deserialized into non-optional type T".into());
     }
-
     let payload: T = serde_json::from_slice(&body_bytes)?;
+    let new_req = Request::from_parts(parts, Body::from(body_bytes));
+    Ok((new_req, payload))
+}
 
-    let new_req = if get_req {
-        parts.method = Method::GET;
-        Request::from_parts(parts, Body::empty())
-    } else {
-        Request::from_parts(parts, Body::from(body_bytes))
-    };
-
+async fn parse_header_payload<T>(req: Request<Body>) -> GenericResult<(Request<Body>, T)>
+where
+    T: DeserializeOwned,
+{
+    let (parts, body) = req.into_parts();
+    let header_value = parts
+        .headers
+        .get(X_AUTH_PAYLOAD)
+        .ok_or("Missing X-Auth-Payload header")?
+        .to_str()?;
+    let payload: T = serde_json::from_str(header_value)?;
+    let new_req = Request::from_parts(parts, body);
     Ok((new_req, payload))
 }

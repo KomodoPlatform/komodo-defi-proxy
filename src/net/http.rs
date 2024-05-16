@@ -112,14 +112,15 @@ pub(crate) async fn http_handler(
 
     let (req, payload) = match generate_payload_from_req(req, &proxy_route.proxy_type).await {
         Ok(t) => t,
-        Err(_) => {
+        Err(e) => {
             log::warn!(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
                     String::from("-"),
                     req_uri,
-                    "Received invalid http payload, returning 401."
+                    "Received invalid http payload: {}, returning 401.",
+                    e
                 )
             );
             return response_by_status(StatusCode::UNAUTHORIZED);

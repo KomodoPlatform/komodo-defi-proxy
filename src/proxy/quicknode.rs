@@ -338,7 +338,7 @@ fn test_quicknode_payload_serialzation_and_deserialization() {
 
 #[tokio::test]
 async fn test_parse_quicknode_payload() {
-    use super::parse_payload;
+    use super::parse_body_payload;
     use hyper::Method;
 
     let serialized_payload = json!({
@@ -365,7 +365,7 @@ async fn test_parse_quicknode_payload() {
     );
 
     let (mut req, payload): (Request<Body>, QuicknodePayload) =
-        parse_payload::<QuicknodePayload>(req, false).await.unwrap();
+        parse_body_payload::<QuicknodePayload>(req).await.unwrap();
 
     let body_bytes = hyper::body::to_bytes(req.body_mut()).await.unwrap();
     assert!(
