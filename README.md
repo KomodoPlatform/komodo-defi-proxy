@@ -12,29 +12,31 @@ Create the configuration file for app runtime.
 
 ```json
 {
-	"port": 6150,
-	"pubkey_path": "/path_to_publick_key.pem",
-	"privkey_path": "/path_to_private_key.pem",
-	"redis_connection_string": "redis://localhost",
-	"token_expiration_time": 300,
-	"proxy_routes": [
-		{
-			"inbound_route": "/dev",
-			"outbound_route": "http://localhost:8000",
-			"authorized": false,
-			"allowed_rpc_methods": [
-				"eth_blockNumber",
-				"eth_gasPrice"
-			]
-		}
-	],
-	"rate_limiter": {
-		"rp_1_min": 30,
-		"rp_5_min": 100,
-		"rp_15_min": 200,
-		"rp_30_min": 350,
-		"rp_60_min": 575
-	}
+  "port": 6150,
+  "pubkey_path": "/path_to_publick_key.pem",
+  "privkey_path": "/path_to_private_key.pem",
+  "redis_connection_string": "redis://localhost",
+  "token_expiration_time": 300,
+  "proxy_routes": [
+    {
+      "inbound_route": "/dev",
+      "outbound_route": "http://localhost:8000",
+      "proxy_type": "quicknode",
+      "authorized": false,
+      "allowed_rpc_methods": [
+        "eth_blockNumber",
+        "eth_gasPrice"
+      ],
+      "rate_limiter": null
+    }
+  ],
+  "rate_limiter": {
+    "rp_1_min": 30,
+    "rp_5_min": 100,
+    "rp_15_min": 200,
+    "rp_30_min": 350,
+    "rp_60_min": 575
+  }
 }
 ```
 
@@ -97,3 +99,31 @@ curl -v --url "'$mm2_address'" -s --data '{
 	"id": 0
 }'
 ```
+
+### How to run KomodoDefi-Proxy Service with Docker Compose
+
+If you want to test features locally, you can run Docker containers using Docker Compose commands.
+
+1. **Update Configuration**:
+   In the `.config_test` file, update the `proxy_routes` field by adding `ProxyRoutes` with the necessary parameters.
+
+2. **Build the Docker Image**:
+   ```sh
+   docker compose build
+   ```
+
+3. **Run Containers in Detached Mode**:
+   ```sh
+   docker compose up -d
+   ```
+
+4. **Follow the Logs**:
+   Open a new terminal window or tab and execute this command to follow the logs of all services defined in the Docker Compose file. The `-f` (or `--follow`) option ensures that new log entries are continuously displayed as they are produced, while the `-t` (or `--timestamps`) option adds timestamps to each log entry.
+   ```sh
+   docker compose logs -f -t
+   ```
+
+5. **Stop the Containers**:
+   ```sh
+   docker compose down
+   ```
