@@ -16,6 +16,7 @@ pub(crate) trait SignOps {
     fn is_valid_checksum_addr(&self) -> bool;
     fn valid_addr_from_str(&self) -> Result<Address, String>;
     fn addr_from_str(&self) -> Result<Address, String>;
+    #[allow(dead_code)]
     fn sign_message(&mut self, secret: &Secret) -> GenericResult<()>;
     fn verify_message(&self) -> GenericResult<bool>;
 }
@@ -104,6 +105,7 @@ impl SignOps for SignedMessage {
         Address::from_str(&self.address[2..]).map_err(|e| e.to_string())
     }
 
+    #[allow(dead_code)]
     fn sign_message(&mut self, secret: &Secret) -> GenericResult<()> {
         let signature = sign(secret, &H256::from(self.sign_message_hash()))?;
         self.signature = format!("0x{}", signature);

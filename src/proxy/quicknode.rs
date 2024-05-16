@@ -32,6 +32,7 @@ enum ProofOfFundingError {
     InvalidSignedMessage,
     InsufficientBalance,
     ErrorFromRpcCall,
+    #[allow(dead_code)]
     RpcCallFailed(String),
 }
 

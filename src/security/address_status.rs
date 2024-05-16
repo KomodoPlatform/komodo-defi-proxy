@@ -82,6 +82,7 @@ impl FromRedisValue for AddressStatus {
 
 #[async_trait]
 pub(crate) trait AddressStatusOperations {
+    #[allow(dead_code)]
     async fn insert_address_status(
         &mut self,
         address: String,
@@ -97,6 +98,7 @@ pub(crate) trait AddressStatusOperations {
 
 #[async_trait]
 impl AddressStatusOperations for Db {
+    #[allow(dead_code)]
     async fn insert_address_status(
         &mut self,
         address: String,
