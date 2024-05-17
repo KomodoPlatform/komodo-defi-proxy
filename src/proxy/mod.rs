@@ -1,6 +1,7 @@
 use crate::ctx::{AppConfig, GenericResult, ProxyRoute};
 use crate::sign::SignedMessage;
-use hyper::header::HeaderValue;
+use hyper::header;
+use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Body, Request, Response, StatusCode, Uri};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,7 @@ mod quicknode;
 pub(crate) use quicknode::{proxy_quicknode, validation_middleware_quicknode, QuicknodePayload};
 
 const X_AUTH_PAYLOAD: &str = "X-Auth-Payload";
+const KEEP_ALIVE: &str = "keep-alive";
 
 /// Enumerates different proxy types supported by the application, focusing on separating feature logic.
 /// This allows for differentiated handling based on what the proxy should do with the request,
@@ -124,4 +126,33 @@ where
     let payload: T = serde_json::from_str(header_value)?;
     let new_req = Request::from_parts(parts, body);
     Ok((new_req, payload))
+}
+
+fn remove_unnecessary_headers(
+    req: &mut Request<hyper::Body>,
+    additional_headers_to_remove: &[HeaderName],
+) -> GenericResult<()> {
+    // List of common hop headers to be removed
+    let mut headers_to_remove = vec![
+        header::ACCEPT_ENCODING,
+        header::CONNECTION,
+        header::HOST,
+        header::PROXY_AUTHENTICATE,
+        header::PROXY_AUTHORIZATION,
+        header::TE,
+        header::TRANSFER_ENCODING,
+        header::TRAILER,
+        header::UPGRADE,
+        HeaderName::from_static(KEEP_ALIVE),
+    ];
+
+    // Extend with additional headers to remove
+    headers_to_remove.extend_from_slice(additional_headers_to_remove);
+
+    // Remove headers
+    for key in &headers_to_remove {
+        req.headers_mut().remove(key);
+    }
+
+    Ok(())
 }

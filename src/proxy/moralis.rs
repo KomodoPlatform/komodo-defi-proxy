@@ -4,6 +4,7 @@ use crate::db::Db;
 use crate::http::{
     insert_jwt_to_http_header, response_by_status, APPLICATION_JSON, X_FORWARDED_FOR,
 };
+use crate::proxy::{remove_unnecessary_headers, X_AUTH_PAYLOAD};
 use crate::rate_limiter::RateLimitOperations;
 use crate::sign::{SignOps, SignedMessage};
 use crate::{log_format, GenericResult};
@@ -65,27 +66,16 @@ pub(crate) async fn proxy_moralis(
         return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
-    // drop hop headers
-    for key in &[
-        header::ACCEPT_ENCODING,
-        header::CONNECTION,
-        header::HOST,
-        header::PROXY_AUTHENTICATE,
-        header::PROXY_AUTHORIZATION,
-        header::TE,
-        header::TRANSFER_ENCODING,
-        header::TRAILER,
-        header::UPGRADE,
+    let additional_headers = &[
         header::CONTENT_LENGTH,
-        header::HeaderName::from_static("keep-alive"),
-    ] {
-        req.headers_mut().remove(key);
-    }
+        HeaderName::from_bytes(X_AUTH_PAYLOAD.as_bytes())?,
+    ];
+    remove_unnecessary_headers(&mut req, additional_headers)?;
 
     req.headers_mut()
         .insert(HeaderName::from_static(X_FORWARDED_FOR), x_forwarded_for);
     req.headers_mut()
-        .insert(header::CONTENT_TYPE, APPLICATION_JSON.parse()?);
+        .insert(header::ACCEPT, APPLICATION_JSON.parse()?);
 
     let https = HttpsConnector::new();
     let client = hyper::Client::builder().build(https);
@@ -245,7 +235,8 @@ pub(crate) async fn validation_middleware_moralis(
 
 #[tokio::test]
 async fn test_parse_moralis_payload() {
-    use super::{parse_header_payload, X_AUTH_PAYLOAD};
+    use super::parse_header_payload;
+    use hyper::header::HeaderName;
     use hyper::Method;
 
     let serialized_payload = serde_json::json!({
@@ -291,6 +282,12 @@ async fn test_parse_moralis_payload() {
 
     assert_eq!(payload, expected_payload);
     assert_eq!(header_value, APPLICATION_JSON);
+
+    let additional_headers = &[
+        header::CONTENT_LENGTH,
+        HeaderName::from_bytes(X_AUTH_PAYLOAD.as_bytes()).unwrap(),
+    ];
+    remove_unnecessary_headers(&mut req, additional_headers).unwrap();
 }
 
 #[tokio::test]
