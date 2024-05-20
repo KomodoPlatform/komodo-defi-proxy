@@ -107,23 +107,19 @@ If you want to test features locally, you can run Docker containers using Docker
 1. **Update Configuration**:
    In the `.config_test` file, update the `proxy_routes` field by adding `ProxyRoutes` with the necessary parameters.
 
-2. **Build the Docker Image**:
-   ```sh
-   docker compose build
-   ```
-
-3. **Run Containers in Detached Mode**:
+2. **Run Containers in Detached Mode**:
+   To start the containers, run the following command. This will build the images if they are not already built or if changes are detected in the Dockerfile or the build context.
    ```sh
    docker compose up -d
    ```
 
-4. **Follow the Logs**:
+3. **Follow the Logs**:
    Open a new terminal window or tab and execute this command to follow the logs of all services defined in the Docker Compose file. The `-f` (or `--follow`) option ensures that new log entries are continuously displayed as they are produced, while the `-t` (or `--timestamps`) option adds timestamps to each log entry.
    ```sh
    docker compose logs -f -t
    ```
 
-5. **Stop the Containers**:
+4. **Stop the Containers**:
    ```sh
    docker compose down
    ```
