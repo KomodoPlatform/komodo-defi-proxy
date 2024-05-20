@@ -128,7 +128,7 @@ where
     Ok((new_req, payload))
 }
 
-fn remove_unnecessary_headers(
+fn remove_hop_by_hop_headers(
     req: &mut Request<hyper::Body>,
     additional_headers_to_remove: &[HeaderName],
 ) -> GenericResult<()> {

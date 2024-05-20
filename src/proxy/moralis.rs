@@ -4,7 +4,7 @@ use crate::db::Db;
 use crate::http::{
     insert_jwt_to_http_header, response_by_status, APPLICATION_JSON, X_FORWARDED_FOR,
 };
-use crate::proxy::{remove_unnecessary_headers, X_AUTH_PAYLOAD};
+use crate::proxy::{remove_hop_by_hop_headers, X_AUTH_PAYLOAD};
 use crate::rate_limiter::RateLimitOperations;
 use crate::sign::{SignOps, SignedMessage};
 use crate::{log_format, GenericResult};
@@ -70,7 +70,7 @@ pub(crate) async fn proxy_moralis(
         header::CONTENT_LENGTH,
         HeaderName::from_bytes(X_AUTH_PAYLOAD.as_bytes())?,
     ];
-    remove_unnecessary_headers(&mut req, additional_headers)?;
+    remove_hop_by_hop_headers(&mut req, additional_headers)?;
 
     req.headers_mut()
         .insert(HeaderName::from_static(X_FORWARDED_FOR), x_forwarded_for);
@@ -287,7 +287,7 @@ async fn test_parse_moralis_payload() {
         header::CONTENT_LENGTH,
         HeaderName::from_bytes(X_AUTH_PAYLOAD.as_bytes()).unwrap(),
     ];
-    remove_unnecessary_headers(&mut req, additional_headers).unwrap();
+    remove_hop_by_hop_headers(&mut req, additional_headers).unwrap();
 }
 
 #[tokio::test]

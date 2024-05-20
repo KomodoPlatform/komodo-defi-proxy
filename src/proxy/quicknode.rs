@@ -4,7 +4,7 @@ use crate::db::Db;
 use crate::http::{
     insert_jwt_to_http_header, response_by_status, APPLICATION_JSON, X_FORWARDED_FOR,
 };
-use crate::proxy::remove_unnecessary_headers;
+use crate::proxy::remove_hop_by_hop_headers;
 use crate::rate_limiter::RateLimitOperations;
 use crate::rpc::Json;
 use crate::sign::{SignOps, SignedMessage};
@@ -98,7 +98,7 @@ pub(crate) async fn proxy_quicknode(
         }
     };
 
-    remove_unnecessary_headers(&mut req, &[])?;
+    remove_hop_by_hop_headers(&mut req, &[])?;
 
     req.headers_mut()
         .insert(HeaderName::from_static(X_FORWARDED_FOR), x_forwarded_for);
@@ -378,5 +378,5 @@ async fn test_parse_quicknode_payload() {
     assert_eq!(payload, expected_payload);
     assert_eq!(header_value, "dummy-value");
 
-    remove_unnecessary_headers(&mut req, &[]).unwrap();
+    remove_hop_by_hop_headers(&mut req, &[]).unwrap();
 }
