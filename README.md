@@ -56,17 +56,34 @@ Expose configuration file's path as an environment variable in `AUTH_APP_CONFIG_
 
 3) If the incoming request comes from the same network, step 4 will be by-passed.
 
-4) Request will be handled in the middleware with:
-   - Status Checker: Checks if the wallet address status is blocked, allowed, or trusted and does the following:
-   	- Blocked: Return `403 Forbidden` immediately
-	- Allowed: process continues with the rate limiter
-	- Trusted: bypass rate limiter and proof of funding
-   - Rate Limiter: First, verify the signed message, and if not valid, return 401 Unauthorized immediately. If valid, then calculate the request count with time interval specified in the application configuration. If the wallet address sent too many request than the expected amount, process continues with the proof of funding. If not, by-passes the proof of funding.
-   - Proof of Funding: Return `406 Not Acceptable` if wallet has 0 balance. Otherwise, we assume that request is valid and process continues as usual.
+4) Request Handling in the Middleware:
 
-5) Find target route by requested endpoint
+   **For Quicknode:**
+   - **Status Checker**:
+     - **Blocked**: Return `403 Forbidden` immediately.
+     - **Allowed**: Process continues with the rate limiter.
+     - **Trusted**: Bypass rate limiter and proof of funding.
 
-6) Check if requested rpc call is allowed in application configuration
+   - **Rate Limiter**:
+     - First, verify the signed message. If not valid, return `401 Unauthorized` immediately.
+     - If valid, calculate the request count with the time interval specified in the application configuration. If the wallet address has sent too many requests than the expected amount, process continues with the proof of funding. If not, bypass the proof of funding.
+
+   - **Proof of Funding**:
+     - Return `406 Not Acceptable` if the wallet has a 0 balance. Otherwise, assume the request is valid and process it as usual.
+
+   **For Moralis:**
+   - **Status Checker**:
+     - **Blocked**: Return `403 Forbidden` immediately.
+     - **Allowed**: Process continues with the rate limiter.
+     - **Trusted**: Bypass the rate limiter.
+
+   - **Rate Limiter**:
+     - First, verify the signed message. If not valid, return `401 Unauthorized` immediately.
+     - If valid, calculate the request count with the time interval specified in the application configuration. If the wallet address has sent too many requests, return an error `406 Not Acceptable` indicating that the wallet address must wait for some time before making more requests.
+
+5) Find target route by requested endpoint.
+
+6) Check if requested rpc call is allowed in application configuration.
 
 7) Generate JWT token with RSA algorithm using pub-priv keys specified in the application configuration, and insert the token to the request header.
 
