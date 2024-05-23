@@ -7,7 +7,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 mod moralis;
-use moralis::{proxy_moralis, validation_middleware_moralis, MoralisPayload};
+use moralis::{proxy_moralis, validation_middleware_moralis};
 mod quicknode;
 pub(crate) use quicknode::{proxy_quicknode, validation_middleware_quicknode, QuicknodePayload};
 
@@ -29,7 +29,8 @@ pub(crate) enum ProxyType {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum PayloadData {
     Quicknode(QuicknodePayload),
-    Moralis(MoralisPayload),
+    /// Moralis feature requires only Signed Message in X-Auth-Payload header
+    Moralis(SignedMessage),
 }
 
 impl PayloadData {
@@ -37,7 +38,7 @@ impl PayloadData {
     pub(crate) fn signed_message(&self) -> &SignedMessage {
         match self {
             PayloadData::Quicknode(payload) => &payload.signed_message,
-            PayloadData::Moralis(payload) => &payload.signed_message,
+            PayloadData::Moralis(payload) => payload,
         }
     }
 }
@@ -55,7 +56,7 @@ pub(crate) async fn generate_payload_from_req(
             Ok((req, PayloadData::Quicknode(payload)))
         }
         ProxyType::Moralis => {
-            let (req, payload) = parse_header_payload::<MoralisPayload>(req).await?;
+            let (req, payload) = parse_header_payload::<SignedMessage>(req).await?;
             Ok((req, PayloadData::Moralis(payload)))
         }
     }

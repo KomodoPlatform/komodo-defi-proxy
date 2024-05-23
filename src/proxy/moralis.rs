@@ -12,25 +12,14 @@ use hyper::header::{HeaderName, HeaderValue};
 use hyper::http::uri::PathAndQuery;
 use hyper::{header, Body, Request, Response, StatusCode, Uri};
 use hyper_tls::HttpsConnector;
-use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::str::FromStr;
-use url::Url;
-
-/// Represents a payload for HTTP GET requests, specifically parsed for the Moralis API within the proxy.
-/// This struct contains the destination URL that the proxy will forward the GET request to, ensuring correct service routing.
-/// It also includes a `SignedMessage` for authentication and validation, confirming the legitimacy of the request and enhancing security.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub(crate) struct MoralisPayload {
-    uri: Url,
-    pub(crate) signed_message: SignedMessage,
-}
 
 pub(crate) async fn proxy_moralis(
     cfg: &AppConfig,
     mut req: Request<Body>,
     remote_addr: &SocketAddr,
-    payload: MoralisPayload,
+    signed_message: SignedMessage,
     x_forwarded_for: HeaderValue,
     proxy_route: &ProxyRoute,
 ) -> GenericResult<Response<Body>> {
@@ -40,7 +29,7 @@ pub(crate) async fn proxy_moralis(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
-                    payload.signed_message.address,
+                    signed_message.address,
                     req.uri(),
                     "Error inserting JWT into HTTP header: {}, returning 500.",
                     e
@@ -52,12 +41,12 @@ pub(crate) async fn proxy_moralis(
 
     let original_req_uri = req.uri().clone();
 
-    if let Err(e) = modify_request_uri(&mut req, &payload, proxy_route).await {
+    if let Err(e) = modify_request_uri(&mut req, proxy_route).await {
         log::error!(
             "{}",
             log_format!(
                 remote_addr.ip(),
-                payload.signed_message.address,
+                signed_message.address,
                 original_req_uri,
                 "Error modifying request Uri: {}, returning 500.",
                 e
@@ -88,7 +77,7 @@ pub(crate) async fn proxy_moralis(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
-                    payload.signed_message.address,
+                    signed_message.address,
                     original_req_uri,
                     "Couldn't reach {}: {}. Returning 503.",
                     target_uri,
@@ -102,54 +91,70 @@ pub(crate) async fn proxy_moralis(
     Ok(res)
 }
 
-/// Modifies the URI of an HTTP request by replacing it to outbound URI specified in `ProxyRoute`,
-/// while incorporating the path and query parameters from the payload's URI.
+/// Modifies the URI of an HTTP request by replacing its base URI with the outbound URI specified in `ProxyRoute`,
+/// while incorporating the path and query parameters from the original request URI. Additionally, this function
+/// removes the first path segment from the original URI.
 async fn modify_request_uri(
     req: &mut Request<Body>,
-    payload: &MoralisPayload,
     proxy_route: &ProxyRoute,
 ) -> GenericResult<()> {
-    let mut proxy_outbound_parts = proxy_route.outbound_route.parse::<Uri>()?.into_parts();
+    let proxy_base_uri = proxy_route.outbound_route.parse::<Uri>()?;
 
-    let payload_uri: Uri = payload.uri.as_str().parse()?;
+    let req_uri = req.uri().clone();
 
-    let path_and_query =
-        PathAndQuery::from_str(payload_uri.path_and_query().map_or("/", |pq| pq.as_str()))?;
-    // Append the path and query from the payload URI to the proxy outbound URI.
+    // Remove the first path segment
+    let mut path_segments: Vec<&str> = req_uri
+        .path()
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    if !path_segments.is_empty() {
+        path_segments.remove(0);
+    }
+    let new_path = format!("/{}", path_segments.join("/"));
+
+    // Construct the new path and query
+    let path_and_query_str = match req_uri.query() {
+        Some(query) => format!("{}?{}", new_path, query),
+        None => new_path,
+    };
+
+    let path_and_query = PathAndQuery::from_str(&path_and_query_str)?;
+
+    // Update the proxy URI with the new path and query
+    let mut proxy_outbound_parts = proxy_base_uri.into_parts();
     proxy_outbound_parts.path_and_query = Some(path_and_query);
 
-    // Reconstruct the full URI with the updated parts.
+    // Reconstruct the full URI with the updated parts
     let new_uri = Uri::from_parts(proxy_outbound_parts)?;
 
-    // Update the request URI.
+    // Update the request URI
     *req.uri_mut() = new_uri;
+
     Ok(())
 }
 
 pub(crate) async fn validation_middleware_moralis(
     cfg: &AppConfig,
-    payload: &MoralisPayload,
+    signed_message: &SignedMessage,
     proxy_route: &ProxyRoute,
     req_uri: &Uri,
     remote_addr: &SocketAddr,
 ) -> Result<(), StatusCode> {
     let mut db = Db::create_instance(cfg).await;
 
-    match db
-        .read_address_status(&payload.signed_message.address)
-        .await
-    {
+    match db.read_address_status(&signed_message.address).await {
         AddressStatus::Trusted => Ok(()),
         AddressStatus::Blocked => Err(StatusCode::FORBIDDEN),
         AddressStatus::None => {
-            match payload.signed_message.verify_message() {
+            match signed_message.verify_message() {
                 Ok(true) => {}
                 Ok(false) => {
                     log::warn!(
                         "{}",
                         log_format!(
                             remote_addr.ip(),
-                            payload.signed_message.address,
+                            signed_message.address,
                             req_uri,
                             "Request has invalid signed message, returning 401"
                         )
@@ -162,10 +167,10 @@ pub(crate) async fn validation_middleware_moralis(
                         "{}",
                         log_format!(
                             remote_addr.ip(),
-                            payload.signed_message.address,
+                            signed_message.address,
                             req_uri,
                             "verify_message failed in coin {}: {}, returning 500.",
-                            payload.signed_message.coin_ticker,
+                            signed_message.coin_ticker,
                             e
                         )
                     );
@@ -173,10 +178,8 @@ pub(crate) async fn validation_middleware_moralis(
                 }
             }
 
-            let rate_limiter_key = format!(
-                "{}:{}",
-                payload.signed_message.coin_ticker, payload.signed_message.address
-            );
+            let rate_limiter_key =
+                format!("{}:{}", signed_message.coin_ticker, signed_message.address);
 
             let rate_limiter = proxy_route
                 .rate_limiter
@@ -189,7 +192,7 @@ pub(crate) async fn validation_middleware_moralis(
                         "{}",
                         log_format!(
                             remote_addr.ip(),
-                            payload.signed_message.address,
+                            signed_message.address,
                             req_uri,
                             "Rate exceed for {}, returning 406.",
                             rate_limiter_key,
@@ -202,10 +205,10 @@ pub(crate) async fn validation_middleware_moralis(
                         "{}",
                         log_format!(
                             remote_addr.ip(),
-                            payload.signed_message.address,
+                            signed_message.address,
                             req_uri,
                             "Rate exceeded check failed in coin {}: {}, returning 500.",
-                            payload.signed_message.coin_ticker,
+                            signed_message.coin_ticker,
                             e
                         )
                     );
@@ -218,10 +221,10 @@ pub(crate) async fn validation_middleware_moralis(
                     "{}",
                     log_format!(
                         remote_addr.ip(),
-                        payload.signed_message.address,
+                        signed_message.address,
                         req_uri,
                         "Rate incrementing failed in coin {}: {}, returning 500.",
-                        payload.signed_message.coin_ticker,
+                        signed_message.coin_ticker,
                         e
                     )
                 );
@@ -240,13 +243,10 @@ async fn test_parse_moralis_payload() {
     use hyper::Method;
 
     let serialized_payload = serde_json::json!({
-        "uri": "https://example.com/test-path",
-        "signed_message": {
-            "coin_ticker": "BTC",
-            "address": "dummy-value",
-            "timestamp_message": 1655320000,
-            "signature": "dummy-value",
-         }
+        "coin_ticker": "BTC",
+        "address": "dummy-value",
+        "timestamp_message": 1655320000,
+        "signature": "dummy-value",
     })
     .to_string();
 
@@ -260,7 +260,7 @@ async fn test_parse_moralis_payload() {
         .body(Body::empty())
         .unwrap();
 
-    let (mut req, payload) = parse_header_payload::<MoralisPayload>(req).await.unwrap();
+    let (mut req, payload) = parse_header_payload::<SignedMessage>(req).await.unwrap();
 
     let body_bytes = hyper::body::to_bytes(req.body_mut()).await.unwrap();
     assert!(
@@ -270,14 +270,11 @@ async fn test_parse_moralis_payload() {
 
     let header_value = req.headers().get(header::ACCEPT).unwrap();
 
-    let expected_payload = MoralisPayload {
-        uri: Url::from_str("https://example.com/test-path").unwrap(),
-        signed_message: SignedMessage {
-            coin_ticker: String::from("BTC"),
-            address: String::from("dummy-value"),
-            timestamp_message: 1655320000,
-            signature: String::from("dummy-value"),
-        },
+    let expected_payload = SignedMessage {
+        coin_ticker: String::from("BTC"),
+        address: String::from("dummy-value"),
+        timestamp_message: 1655320000,
+        signature: String::from("dummy-value"),
     };
 
     assert_eq!(payload, expected_payload);
@@ -294,24 +291,13 @@ async fn test_parse_moralis_payload() {
 async fn test_modify_request_uri() {
     use super::ProxyType;
 
-    let orig_uri_str = "https://proxy.example:3535/test-inbound";
     let mut req = Request::builder()
-        .uri(orig_uri_str)
+        .uri("https://komodoproxy.com/nft-proxy/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC")
         .body(Body::empty())
         .unwrap();
 
-    let payload = MoralisPayload {
-        uri: Url::from_str("https://proxy.example:3535/api/v2/item/0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB/1?chain=eth&format=decimal&normalizeMetadata=true&media_items=false").unwrap(),
-        signed_message: SignedMessage {
-            coin_ticker: String::from("BTC"),
-            address: String::from("dummy-value"),
-            timestamp_message: 1655320000,
-            signature: String::from("dummy-value"),
-        },
-    };
-
     let proxy_route = ProxyRoute {
-        inbound_route: String::from_str("/test-inbound").unwrap(),
+        inbound_route: String::from_str("/nft-proxy").unwrap(),
         outbound_route: "http://localhost:8000".to_string(),
         proxy_type: ProxyType::Moralis,
         authorized: false,
@@ -319,12 +305,10 @@ async fn test_modify_request_uri() {
         rate_limiter: None,
     };
 
-    modify_request_uri(&mut req, &payload, &proxy_route)
-        .await
-        .unwrap();
+    modify_request_uri(&mut req, &proxy_route).await.unwrap();
 
     assert_eq!(
         req.uri(),
-        "http://localhost:8000/api/v2/item/0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB/1?chain=eth&format=decimal&normalizeMetadata=true&media_items=false"
+        "http://localhost:8000/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC"
     );
 }

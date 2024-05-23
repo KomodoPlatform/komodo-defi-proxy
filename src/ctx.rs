@@ -80,16 +80,15 @@ impl AppConfig {
             .unwrap_or(DEFAULT_TOKEN_EXPIRATION_TIME)
     }
 
-    pub(crate) fn get_proxy_route_by_inbound(&self, inbound: String) -> Option<&ProxyRoute> {
+    pub(crate) fn get_proxy_route_by_inbound(&self, inbound: &str) -> Option<&ProxyRoute> {
         let route_index = self.proxy_routes.iter().position(|r| {
-            r.inbound_route == inbound || r.inbound_route.to_owned() + "/" == inbound
+            r.inbound_route == inbound
+                || r.inbound_route == "/".to_owned() + inbound
+                || r.inbound_route.to_owned() + "/" == inbound
+                || "/".to_owned() + &*r.inbound_route == "/".to_owned() + inbound
         });
 
-        if let Some(index) = route_index {
-            return Some(&self.proxy_routes[index]);
-        }
-
-        None
+        route_index.map(|index| &self.proxy_routes[index])
     }
 }
 

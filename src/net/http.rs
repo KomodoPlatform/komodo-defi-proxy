@@ -93,8 +93,14 @@ pub(crate) async fn http_handler(
         return handle_preflight();
     }
 
+    let inbound_route = match req.method() {
+        // should take the second element as path string starts with a delimiter
+        &Method::GET => req.uri().path().split('/').nth(1).unwrap_or("").to_string(),
+        _ => req.uri().path().to_string(),
+    };
+
     // create proxy_route before payload, as we need proxy_type from it for payload generation
-    let proxy_route = match cfg.get_proxy_route_by_inbound(req.uri().path().to_string()) {
+    let proxy_route = match cfg.get_proxy_route_by_inbound(&inbound_route) {
         Some(proxy_route) => proxy_route,
         None => {
             log::warn!(
@@ -192,21 +198,17 @@ fn test_get_proxy_route_by_inbound() {
     // If we leave this code line `let proxy_route = match cfg.get_proxy_route_by_inbound(req.uri().to_string()) {`
     // inbound_route cant be "/test", as it's not uri. I suppose inbound actually should be a Path.
     // Two options: in `req.uri().to_string()` path() is missing or "/test" in test is wrong and the whole url should be.
-    let proxy_route = cfg
-        .get_proxy_route_by_inbound(String::from("/test"))
-        .unwrap();
+    let proxy_route = cfg.get_proxy_route_by_inbound("/test").unwrap();
 
     assert_eq!(proxy_route.outbound_route, "https://komodoplatform.com");
 
-    let proxy_route = cfg
-        .get_proxy_route_by_inbound(String::from("/test-2"))
-        .unwrap();
+    let proxy_route = cfg.get_proxy_route_by_inbound("/test-2").unwrap();
 
     assert_eq!(proxy_route.outbound_route, "https://atomicdex.io");
 
     let url = Uri::from_str("https://komodo.proxy:5535/nft-test").unwrap();
     let path = url.path().to_string();
-    let proxy_route = cfg.get_proxy_route_by_inbound(path).unwrap();
+    let proxy_route = cfg.get_proxy_route_by_inbound(&path).unwrap();
     assert_eq!(proxy_route.outbound_route, "https://nft.proxy");
 }
 
