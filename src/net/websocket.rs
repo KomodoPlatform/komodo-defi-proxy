@@ -26,7 +26,7 @@ pub(crate) async fn socket_handler(
     mut req: Request<Body>,
     remote_addr: SocketAddr,
 ) -> GenericResult<Response<Body>> {
-    let inbound_route = req.uri().to_string();
+    let inbound_route = req.uri().path().to_string();
     let proxy_route = match cfg.get_proxy_route_by_inbound(&inbound_route) {
         Some(proxy_route) => proxy_route.clone(),
         None => {
