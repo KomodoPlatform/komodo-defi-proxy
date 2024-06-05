@@ -4,7 +4,7 @@ use crate::db::Db;
 use crate::http::{
     insert_jwt_to_http_header, response_by_status, APPLICATION_JSON, X_FORWARDED_FOR,
 };
-use crate::proxy::{remove_hop_by_hop_headers, X_AUTH_PAYLOAD};
+use crate::proxy::remove_hop_by_hop_headers;
 use crate::rate_limiter::RateLimitOperations;
 use crate::sign::{SignOps, SignedMessage};
 use crate::{log_format, GenericResult};
@@ -55,11 +55,7 @@ pub(crate) async fn proxy_moralis(
         return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
-    let additional_headers = &[
-        header::CONTENT_LENGTH,
-        HeaderName::from_bytes(X_AUTH_PAYLOAD.as_bytes())?,
-    ];
-    remove_hop_by_hop_headers(&mut req, additional_headers)?;
+    remove_hop_by_hop_headers(&mut req, &[header::CONTENT_LENGTH])?;
 
     req.headers_mut()
         .insert(HeaderName::from_static(X_FORWARDED_FOR), x_forwarded_for);
@@ -238,7 +234,7 @@ pub(crate) async fn validation_middleware_moralis(
 
 #[tokio::test]
 async fn test_parse_moralis_payload() {
-    use super::parse_header_payload;
+    use super::{parse_header_payload, X_AUTH_PAYLOAD};
     use hyper::header::HeaderName;
     use hyper::Method;
 
@@ -260,7 +256,7 @@ async fn test_parse_moralis_payload() {
         .body(Body::empty())
         .unwrap();
 
-    let (mut req, payload) = parse_header_payload::<SignedMessage>(req).await.unwrap();
+    let (mut req, payload) = parse_header_payload(req).await.unwrap();
 
     let body_bytes = hyper::body::to_bytes(req.body_mut()).await.unwrap();
     assert!(
