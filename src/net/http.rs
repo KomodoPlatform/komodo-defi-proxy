@@ -195,9 +195,6 @@ fn test_get_proxy_route_by_inbound() {
 
     let cfg = ctx::get_app_config_test_instance();
 
-    // If we leave this code line `let proxy_route = match cfg.get_proxy_route_by_inbound(req.uri().to_string()) {`
-    // inbound_route cant be "/test", as it's not uri. I suppose inbound actually should be a Path.
-    // Two options: in `req.uri().to_string()` path() is missing or "/test" in test is wrong and the whole url should be.
     let proxy_route = cfg.get_proxy_route_by_inbound("/test").unwrap();
 
     assert_eq!(proxy_route.outbound_route, "https://komodoplatform.com");
