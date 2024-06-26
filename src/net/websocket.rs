@@ -12,7 +12,7 @@ use crate::{
     ctx::AppConfig,
     http::response_by_status,
     log_format,
-    proxy::{validation_middleware_quicknode, QuicknodePayload},
+    proxy::{validation_middleware_quicknode, QuicknodeSocketPayload},
     GenericResult,
 };
 
@@ -137,7 +137,7 @@ pub(crate) async fn socket_handler(
                                             match msg {
                                                 Some(Ok(msg)) => {
                                                     if let Message::Text(msg) = msg {
-                                                         let payload: QuicknodePayload = match serde_json::from_str(&msg) {
+                                                         let socket_payload: QuicknodeSocketPayload = match serde_json::from_str(&msg) {
                                                              Ok(t) => t,
                                                              Err(e) => {
                                                                  if let Err(e) = inbound_socket.send(format!("Invalid payload. {e}").into()).await {
@@ -155,7 +155,7 @@ pub(crate) async fn socket_handler(
                                                                  continue;
                                                              },
                                                          };
-
+                                                        let (payload, signed_message) = socket_payload.into_parts();
 
                                                         if !proxy_route.allowed_rpc_methods.contains(&payload.method) {
                                                              if let Err(e) = inbound_socket.send("Method not allowed.".into()).await {
@@ -173,10 +173,10 @@ pub(crate) async fn socket_handler(
                                                              continue;
                                                         }
 
-                                                        // TODO add general validation_middleware support
+                                                        // TODO add general validation_middleware support (if have new features which support websocket)
                                                         match validation_middleware_quicknode(
                                                             &cfg,
-                                                            &payload,
+                                                            &signed_message,
                                                             &proxy_route,
                                                             req.uri(),
                                                             &remote_addr,

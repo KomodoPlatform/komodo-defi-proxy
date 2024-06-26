@@ -17,15 +17,37 @@ use serde_json::json;
 use std::net::SocketAddr;
 
 /// Represents a payload for JSON-RPC calls, tailored for the Quicknode API within the proxy.
-/// This struct combines standard JSON RPC method call fields (method, params, id, jsonrpc) with a `SignedMessage`
-/// for authentication and validation, facilitating secure and validated interactions with the Quicknode service.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub(crate) struct QuicknodePayload {
     pub(crate) method: String,
     pub(crate) params: serde_json::value::Value,
     pub(crate) id: usize,
     pub(crate) jsonrpc: String,
+}
+
+/// Used for websocket connection.
+/// It combines standard JSON RPC method call fields (method, params, id, jsonrpc) with a `SignedMessage`
+/// for authentication and validation, facilitating secure and validated interactions with the Quicknode service.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub(crate) struct QuicknodeSocketPayload {
+    pub(crate) method: String,
+    pub(crate) params: serde_json::value::Value,
+    pub(crate) id: usize,
+    pub(crate) jsonrpc: String,
     pub(crate) signed_message: SignedMessage,
+}
+
+impl QuicknodeSocketPayload {
+    pub(crate) fn into_parts(self) -> (QuicknodePayload, SignedMessage) {
+        let payload = QuicknodePayload {
+            method: self.method,
+            params: self.params,
+            id: self.id,
+            jsonrpc: self.jsonrpc,
+        };
+        let signed_message = self.signed_message;
+        (payload, signed_message)
+    }
 }
 
 #[derive(Debug)]
@@ -42,6 +64,7 @@ pub(crate) async fn proxy_quicknode(
     mut req: Request<Body>,
     remote_addr: &SocketAddr,
     payload: QuicknodePayload,
+    signed_message: SignedMessage,
     x_forwarded_for: HeaderValue,
     proxy_route: &ProxyRoute,
 ) -> GenericResult<Response<Body>> {
@@ -51,7 +74,7 @@ pub(crate) async fn proxy_quicknode(
             "{}",
             log_format!(
                 remote_addr.ip(),
-                payload.signed_message.address,
+                signed_message.address,
                 req.uri(),
                 "Method {} not allowed for, returning 403.",
                 payload.method
@@ -70,7 +93,7 @@ pub(crate) async fn proxy_quicknode(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
-                    payload.signed_message.address,
+                    signed_message.address,
                     req.uri(),
                     "Error inserting JWT into http header, returning 500."
                 )
@@ -87,7 +110,7 @@ pub(crate) async fn proxy_quicknode(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
-                    payload.signed_message.address,
+                    signed_message.address,
                     original_req_uri,
                     "Error type casting value of {} into Uri: {}, returning 500.",
                     proxy_route.outbound_route,
@@ -116,7 +139,7 @@ pub(crate) async fn proxy_quicknode(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
-                    payload.signed_message.address,
+                    signed_message.address,
                     original_req_uri,
                     "Couldn't reach {}: {}. Returning 503.",
                     target_uri,
@@ -132,28 +155,26 @@ pub(crate) async fn proxy_quicknode(
 
 pub(crate) async fn validation_middleware_quicknode(
     cfg: &AppConfig,
-    payload: &QuicknodePayload,
+    signed_message: &SignedMessage,
     proxy_route: &ProxyRoute,
     req_uri: &Uri,
     remote_addr: &SocketAddr,
 ) -> Result<(), StatusCode> {
     let mut db = Db::create_instance(cfg).await;
 
-    match db
-        .read_address_status(&payload.signed_message.address)
-        .await
-    {
+    match db.read_address_status(&signed_message.address).await {
         AddressStatus::Trusted => Ok(()),
         AddressStatus::Blocked => Err(StatusCode::FORBIDDEN),
         AddressStatus::None => {
-            let signed_message_status = verify_message_and_balance(cfg, payload, proxy_route).await;
+            let signed_message_status =
+                verify_message_and_balance(cfg, signed_message, proxy_route).await;
 
             if let Err(ProofOfFundingError::InvalidSignedMessage) = signed_message_status {
                 log::warn!(
                     "{}",
                     log_format!(
                         remote_addr.ip(),
-                        payload.signed_message.address,
+                        signed_message.address,
                         req_uri,
                         "Request has invalid signed message, returning 401"
                     )
@@ -162,10 +183,8 @@ pub(crate) async fn validation_middleware_quicknode(
                 return Err(StatusCode::UNAUTHORIZED);
             };
 
-            let rate_limiter_key = format!(
-                "{}:{}",
-                payload.signed_message.coin_ticker, payload.signed_message.address
-            );
+            let rate_limiter_key =
+                format!("{}:{}", signed_message.coin_ticker, signed_message.address);
 
             let rate_limiter = proxy_route
                 .rate_limiter
@@ -178,26 +197,26 @@ pub(crate) async fn validation_middleware_quicknode(
                         "{}",
                         log_format!(
                             remote_addr.ip(),
-                            payload.signed_message.address,
+                            signed_message.address,
                             req_uri,
                             "Rate exceed for {}, checking balance for {} address.",
                             rate_limiter_key,
-                            payload.signed_message.address
+                            signed_message.address
                         )
                     );
 
-                    match verify_message_and_balance(cfg, payload, proxy_route).await {
+                    match verify_message_and_balance(cfg, signed_message, proxy_route).await {
                         Ok(_) => {}
                         Err(ProofOfFundingError::InsufficientBalance) => {
                             log::warn!(
                                 "{}",
                                 log_format!(
                                     remote_addr.ip(),
-                                    payload.signed_message.address,
+                                    signed_message.address,
                                     req_uri,
                                     "Wallet {} has insufficient balance for coin {}, returning 406.",
-                                    payload.signed_message.address,
-                                    payload.signed_message.coin_ticker,
+                                    signed_message.address,
+                                    signed_message.coin_ticker,
                                 )
                             );
 
@@ -208,10 +227,10 @@ pub(crate) async fn validation_middleware_quicknode(
                                 "{}",
                                 log_format!(
                                     remote_addr.ip(),
-                                    payload.signed_message.address,
+                                    signed_message.address,
                                     req_uri,
                                     "verify_message_and_balance failed in coin {}: {:?}",
-                                    payload.signed_message.coin_ticker,
+                                    signed_message.coin_ticker,
                                     e
                                 )
                             );
@@ -226,7 +245,7 @@ pub(crate) async fn validation_middleware_quicknode(
                     "{}",
                     log_format!(
                         remote_addr.ip(),
-                        payload.signed_message.address,
+                        signed_message.address,
                         req_uri,
                         "Rate incrementing failed."
                     )
@@ -240,14 +259,14 @@ pub(crate) async fn validation_middleware_quicknode(
 
 async fn verify_message_and_balance(
     cfg: &AppConfig,
-    payload: &QuicknodePayload,
+    signed_message: &SignedMessage,
     proxy_route: &ProxyRoute,
 ) -> Result<(), ProofOfFundingError> {
-    if let Ok(true) = payload.signed_message.verify_message() {
+    if let Ok(true) = signed_message.verify_message() {
         let mut db = Db::create_instance(cfg).await;
 
         // We don't want to send balance requests everytime when user sends requests.
-        if let Ok(true) = db.key_exists(&payload.signed_message.address).await {
+        if let Ok(true) = db.key_exists(&signed_message.address).await {
             return Ok(());
         }
 
@@ -255,7 +274,7 @@ async fn verify_message_and_balance(
             "id": 1,
             "jsonrpc": "2.0",
             "method": "eth_getBalance",
-            "params": [payload.signed_message.address, "latest"]
+            "params": [signed_message.address, "latest"]
         });
 
         let rpc_client =
@@ -268,9 +287,7 @@ async fn verify_message_and_balance(
         {
             Ok(res) if res["result"] != Json::Null && res["result"] != "0x0" => {
                 // cache this address for 60 seconds
-                let _ = db
-                    .insert_cache(&payload.signed_message.address, "", 60)
-                    .await;
+                let _ = db.insert_cache(&signed_message.address, "", 60).await;
 
                 return Ok(());
             }
@@ -291,13 +308,7 @@ fn test_quicknode_payload_serialzation_and_deserialization() {
         "method": "dummy-value",
         "params": [],
         "id": 1,
-        "jsonrpc": "2.0",
-        "signed_message": {
-            "coin_ticker": "ETH",
-            "address": "dummy-value",
-            "timestamp_message": 1655319963,
-            "signature": "dummy-value",
-         }
+        "jsonrpc": "2.0"
     });
 
     let actual_payload: QuicknodePayload = serde_json::from_str(&json_payload.to_string()).unwrap();
@@ -307,12 +318,6 @@ fn test_quicknode_payload_serialzation_and_deserialization() {
         params: json!([]),
         id: 1,
         jsonrpc: String::from("2.0"),
-        signed_message: SignedMessage {
-            coin_ticker: String::from("ETH"),
-            address: String::from("dummy-value"),
-            timestamp_message: 1655319963,
-            signature: String::from("dummy-value"),
-        },
     };
 
     assert_eq!(actual_payload, expected_payload);
@@ -325,25 +330,31 @@ fn test_quicknode_payload_serialzation_and_deserialization() {
 
 #[tokio::test]
 async fn test_parse_quicknode_payload() {
-    use super::parse_body_payload;
+    use super::{parse_body_payload, X_AUTH_PAYLOAD};
     use hyper::Method;
 
     let serialized_payload = json!({
         "method": "dummy-value",
         "params": [],
         "id": 1,
-        "jsonrpc": "2.0",
-        "signed_message": {
-            "coin_ticker": "ETH",
-            "address": "dummy-value",
-            "timestamp_message": 1655319963,
-            "signature": "dummy-value",
-         }
+        "jsonrpc": "2.0"
+    })
+    .to_string();
+
+    let serialized_auth_value = json!({
+        "coin_ticker": "ETH",
+        "address": "dummy-value",
+        "timestamp_message": 1655319963,
+        "signature": "dummy-value",
     })
     .to_string();
 
     let mut req = Request::builder()
         .method(Method::POST)
+        .header(
+            X_AUTH_PAYLOAD,
+            HeaderValue::from_str(&serialized_auth_value).unwrap(),
+        )
         .body(Body::from(serialized_payload))
         .unwrap();
     req.headers_mut().insert(
@@ -351,7 +362,7 @@ async fn test_parse_quicknode_payload() {
         "dummy-value".parse().unwrap(),
     );
 
-    let (mut req, payload): (Request<Body>, QuicknodePayload) =
+    let (mut req, payload, signed_message) =
         parse_body_payload::<QuicknodePayload>(req).await.unwrap();
 
     let body_bytes = hyper::body::to_bytes(req.body_mut()).await.unwrap();
@@ -360,23 +371,24 @@ async fn test_parse_quicknode_payload() {
         "Body should not be empty for non-GET methods"
     );
 
-    let header_value = req.headers().get("dummy-header").unwrap();
+    let dummy_header_value = req.headers().get("dummy-header").unwrap();
+    assert_eq!(dummy_header_value, "dummy-value");
 
     let expected_payload = QuicknodePayload {
         method: String::from("dummy-value"),
         params: json!([]),
         id: 1,
         jsonrpc: String::from("2.0"),
-        signed_message: SignedMessage {
-            coin_ticker: String::from("ETH"),
-            address: String::from("dummy-value"),
-            timestamp_message: 1655319963,
-            signature: String::from("dummy-value"),
-        },
     };
-
     assert_eq!(payload, expected_payload);
-    assert_eq!(header_value, "dummy-value");
+
+    let expected_auth_value = SignedMessage {
+        coin_ticker: String::from("ETH"),
+        address: String::from("dummy-value"),
+        timestamp_message: 1655319963,
+        signature: String::from("dummy-value"),
+    };
+    assert_eq!(signed_message, expected_auth_value);
 
     remove_hop_by_hop_headers(&mut req, &[]).unwrap();
 }
