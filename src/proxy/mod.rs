@@ -30,11 +30,12 @@ pub(crate) enum ProxyType {
 /// This helps in managing the logic for routing and processing requests appropriately within the proxy layer.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum PayloadData {
+    /// Quicknode feature requires body payload and Signed Message in X-Auth-Payload header
     Quicknode {
         payload: QuicknodePayload,
         signed_message: SignedMessage,
     },
-    /// Moralis feature requires only Signed Message in X-Auth-Payload header
+    /// Moralis feature requires only Signed Message in X-Auth-Payload header and doesn't have body
     Moralis(SignedMessage),
 }
 
@@ -58,7 +59,7 @@ pub(crate) async fn generate_payload_from_req(
     match proxy_type {
         ProxyType::Quicknode => {
             let (req, payload, signed_message) =
-                parse_body_payload::<QuicknodePayload>(req).await?;
+                parse_body_and_auth_header::<QuicknodePayload>(req).await?;
             let payload_data = PayloadData::Quicknode {
                 payload,
                 signed_message,
@@ -66,7 +67,7 @@ pub(crate) async fn generate_payload_from_req(
             Ok((req, payload_data))
         }
         ProxyType::Moralis => {
-            let (req, signed_message) = parse_header_payload(req).await?;
+            let (req, signed_message) = parse_auth_header(req).await?;
             Ok((req, PayloadData::Moralis(signed_message)))
         }
     }
@@ -134,7 +135,7 @@ pub(crate) async fn validation_middleware(
 /// This function extracts the `X-Auth-Payload` header from the request, parses it into a `SignedMessage`,
 /// and then reads and deserializes the request body into a specified type `T`.
 /// If the body is empty or the header is missing, an error is returned.
-async fn parse_body_payload<T>(
+async fn parse_body_and_auth_header<T>(
     req: Request<Body>,
 ) -> GenericResult<(Request<Body>, T, SignedMessage)>
 where
@@ -157,7 +158,7 @@ where
 }
 
 /// Parses [SignedMessage] value from X-Auth-Payload header
-async fn parse_header_payload(req: Request<Body>) -> GenericResult<(Request<Body>, SignedMessage)> {
+async fn parse_auth_header(req: Request<Body>) -> GenericResult<(Request<Body>, SignedMessage)> {
     let (parts, body) = req.into_parts();
     let header_value = parts
         .headers

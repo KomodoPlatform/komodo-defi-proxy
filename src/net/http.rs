@@ -11,9 +11,9 @@ use jwt::{get_cached_token_or_generate_one, JwtClaims};
 use serde_json::json;
 use std::net::SocketAddr;
 
-/// Value
+/// Header value for `hyper::header::CONTENT_TYPE`
 pub(crate) const APPLICATION_JSON: &str = "application/json";
-/// Header
+/// Represents `X-Forwarded-For` Header key
 pub(crate) const X_FORWARDED_FOR: &str = "x-forwarded-for";
 async fn get_healthcheck() -> GenericResult<Response<Body>> {
     let json = json!({

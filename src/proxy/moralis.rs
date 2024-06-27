@@ -41,7 +41,7 @@ pub(crate) async fn proxy_moralis(
 
     let original_req_uri = req.uri().clone();
 
-    if let Err(e) = modify_request_uri(&mut req, proxy_route).await {
+    if let Err(e) = modify_request_uri(&mut req, proxy_route) {
         log::error!(
             "{}",
             log_format!(
@@ -90,10 +90,7 @@ pub(crate) async fn proxy_moralis(
 /// Modifies the URI of an HTTP request by replacing its base URI with the outbound URI specified in `ProxyRoute`,
 /// while incorporating the path and query parameters from the original request URI. Additionally, this function
 /// removes the first path segment from the original URI.
-async fn modify_request_uri(
-    req: &mut Request<Body>,
-    proxy_route: &ProxyRoute,
-) -> GenericResult<()> {
+fn modify_request_uri(req: &mut Request<Body>, proxy_route: &ProxyRoute) -> GenericResult<()> {
     let proxy_base_uri = proxy_route.outbound_route.parse::<Uri>()?;
 
     let req_uri = req.uri().clone();
@@ -234,7 +231,7 @@ pub(crate) async fn validation_middleware_moralis(
 
 #[tokio::test]
 async fn test_parse_moralis_payload() {
-    use super::{parse_header_payload, X_AUTH_PAYLOAD};
+    use super::{parse_auth_header, X_AUTH_PAYLOAD};
     use hyper::header::HeaderName;
     use hyper::Method;
 
@@ -256,7 +253,7 @@ async fn test_parse_moralis_payload() {
         .body(Body::empty())
         .unwrap();
 
-    let (mut req, payload) = parse_header_payload(req).await.unwrap();
+    let (mut req, payload) = parse_auth_header(req).await.unwrap();
 
     let body_bytes = hyper::body::to_bytes(req.body_mut()).await.unwrap();
     assert!(
@@ -301,7 +298,7 @@ async fn test_modify_request_uri() {
         rate_limiter: None,
     };
 
-    modify_request_uri(&mut req, &proxy_route).await.unwrap();
+    modify_request_uri(&mut req, &proxy_route).unwrap();
 
     assert_eq!(
         req.uri(),

@@ -330,7 +330,7 @@ fn test_quicknode_payload_serialzation_and_deserialization() {
 
 #[tokio::test]
 async fn test_parse_quicknode_payload() {
-    use super::{parse_body_payload, X_AUTH_PAYLOAD};
+    use super::{parse_body_and_auth_header, X_AUTH_PAYLOAD};
     use hyper::Method;
 
     let serialized_payload = json!({
@@ -362,8 +362,9 @@ async fn test_parse_quicknode_payload() {
         "dummy-value".parse().unwrap(),
     );
 
-    let (mut req, payload, signed_message) =
-        parse_body_payload::<QuicknodePayload>(req).await.unwrap();
+    let (mut req, payload, signed_message) = parse_body_and_auth_header::<QuicknodePayload>(req)
+        .await
+        .unwrap();
 
     let body_bytes = hyper::body::to_bytes(req.body_mut()).await.unwrap();
     assert!(
