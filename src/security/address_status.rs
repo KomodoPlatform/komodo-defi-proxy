@@ -107,7 +107,7 @@ impl AddressStatusOperations for Db {
         Ok(redis::cmd("HSET")
             .arg(DB_STATUS_LIST)
             .arg(&[address, format!("{}", status as i8)])
-            .query_async(&mut self.connection)
+            .query_async::<_, ()>(&mut self.connection)
             .await?)
     }
 
@@ -121,7 +121,7 @@ impl AddressStatusOperations for Db {
             .map(|v| (v.address.clone(), v.status))
             .collect();
         pipe.hset_multiple(DB_STATUS_LIST, &formatted);
-        pipe.query_async(&mut self.connection).await?;
+        pipe.query_async::<_, ()>(&mut self.connection).await?;
 
         Ok(())
     }

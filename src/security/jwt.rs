@@ -102,7 +102,7 @@ pub(crate) async fn generate_jwt_and_cache_it(
         .arg("EX")
         .arg(cfg.token_expiration_time() - 60) // expire 60 seconds before token's expiration
         .arg("NX")
-        .query_async(&mut conn)
+        .query_async::<_, ()>(&mut conn)
         .await?;
 
     Ok(token)

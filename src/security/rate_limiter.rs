@@ -59,7 +59,7 @@ impl RateLimitOperations for Db {
         self.upsert_address_rate_in_pipe(&mut pipe, DB_RP_30_MIN, &address, 1800);
         self.upsert_address_rate_in_pipe(&mut pipe, DB_RP_60_MIN, &address, 3600);
         // Execute the pipeline once after setting all commands
-        pipe.query_async(&mut self.connection).await?;
+        pipe.query_async::<_, ()>(&mut self.connection).await?;
 
         Ok(())
     }

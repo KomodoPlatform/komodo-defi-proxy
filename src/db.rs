@@ -53,7 +53,7 @@ impl Db {
             .arg(key)
             .arg(seconds)
             .arg(value)
-            .query_async(&mut self.connection)
+            .query_async::<_, ()>(&mut self.connection)
             .await?;
 
         Ok(())
