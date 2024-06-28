@@ -1,3 +1,4 @@
+use hyper::Uri;
 use once_cell::sync::OnceCell;
 use proxy::ProxyType;
 use serde::{Deserialize, Serialize};
@@ -90,6 +91,65 @@ impl AppConfig {
 
         route_index.map(|index| &self.proxy_routes[index])
     }
+
+    /// Finds the best matching proxy route based on the provided URI's path and updates the URI by
+    /// removing the matched path segments while preserving the query parameters.
+    pub(crate) fn get_proxy_route_extracting_uri_inbound(
+        &self,
+        uri: &mut Uri,
+    ) -> GenericResult<Option<&ProxyRoute>> {
+        let path_segments: Vec<&str> = uri.path().split('/').filter(|s| !s.is_empty()).collect();
+
+        let mut best_match: Option<(&ProxyRoute, usize)> = None;
+
+        for r in &self.proxy_routes {
+            let route_segments: Vec<&str> = r
+                .inbound_route
+                .split('/')
+                .filter(|s| !s.is_empty())
+                .collect();
+            // Count the number of segments that match between the route and the path
+            let matched_segments = route_segments
+                .iter()
+                .zip(&path_segments)
+                .take_while(|(route_seg, path_seg)| route_seg == path_seg)
+                .count();
+            // Update best_match if this route fully matches (all its segments are matched)
+            // and best_match is None or has more matched segments than the current best match
+            if matched_segments == route_segments.len() // Ensure all segments of the route are matched
+                && (best_match.is_none() || matched_segments > best_match.unwrap().1)
+            {
+                best_match = Some((r, matched_segments));
+            }
+        }
+
+        if let Some((route, matched_segments)) = best_match {
+            // Construct the remaining path by skipping matched segments and accumulating the rest
+            let remaining_path: String = path_segments.iter().skip(matched_segments).fold(
+                String::new(),
+                |mut acc, segment| {
+                    acc.push('/');
+                    acc.push_str(segment);
+                    acc
+                },
+            );
+
+            // Construct the new path and query
+            let new_path_and_query = match uri.query() {
+                Some(query) => format!("{}?{}", remaining_path, query),
+                None => remaining_path,
+            };
+
+            let mut parts = uri.clone().into_parts();
+            parts.path_and_query = Some(new_path_and_query.parse()?);
+            let new_uri = Uri::from_parts(parts)?;
+            *uri = new_uri;
+
+            return Ok(Some(route));
+        }
+
+        Ok(None)
+    }
 }
 
 #[cfg(test)]
@@ -120,6 +180,34 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
             ProxyRoute {
                 inbound_route: String::from("/nft-test"),
                 outbound_route: String::from("https://nft.proxy"),
+                proxy_type: ProxyType::Moralis,
+                authorized: false,
+                allowed_rpc_methods: Vec::default(),
+                rate_limiter: Some(RateLimiter {
+                    rp_1_min: 60,
+                    rp_5_min: 200,
+                    rp_15_min: 700,
+                    rp_30_min: 1000,
+                    rp_60_min: 2000,
+                }),
+            },
+            ProxyRoute {
+                inbound_route: String::from("/nft-test/special"),
+                outbound_route: String::from("https://nft.special"),
+                proxy_type: ProxyType::Moralis,
+                authorized: false,
+                allowed_rpc_methods: Vec::default(),
+                rate_limiter: Some(RateLimiter {
+                    rp_1_min: 60,
+                    rp_5_min: 200,
+                    rp_15_min: 700,
+                    rp_30_min: 1000,
+                    rp_60_min: 2000,
+                }),
+            },
+            ProxyRoute {
+                inbound_route: String::from("/"),
+                outbound_route: String::from("https://adex.io"),
                 proxy_type: ProxyType::Moralis,
                 authorized: false,
                 allowed_rpc_methods: Vec::default(),
@@ -170,6 +258,34 @@ fn test_app_config_serialzation_and_deserialization() {
             {
                 "inbound_route": "/nft-test",
                 "outbound_route": "https://nft.proxy",
+                "proxy_type":"moralis",
+                "authorized": false,
+                "allowed_rpc_methods": [],
+                "rate_limiter": {
+                    "rp_1_min": 60,
+                    "rp_5_min": 200,
+                    "rp_15_min": 700,
+                    "rp_30_min": 1000,
+                    "rp_60_min": 2000
+                }
+            },
+            {
+                "inbound_route": "/nft-test/special",
+                "outbound_route": "https://nft.special",
+                "proxy_type":"moralis",
+                "authorized": false,
+                "allowed_rpc_methods": [],
+                "rate_limiter": {
+                    "rp_1_min": 60,
+                    "rp_5_min": 200,
+                    "rp_15_min": 700,
+                    "rp_30_min": 1000,
+                    "rp_60_min": 2000
+                }
+            },
+            {
+                "inbound_route": "/",
+                "outbound_route": "https://adex.io",
                 "proxy_type":"moralis",
                 "authorized": false,
                 "allowed_rpc_methods": [],

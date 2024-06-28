@@ -63,7 +63,7 @@ pub(crate) async fn insert_jwt_to_http_header(
 
 pub(crate) async fn http_handler(
     cfg: &AppConfig,
-    req: Request<Body>,
+    mut req: Request<Body>,
     remote_addr: SocketAddr,
 ) -> GenericResult<Response<Body>> {
     let req_uri = req.uri().clone();
@@ -93,27 +93,50 @@ pub(crate) async fn http_handler(
         return handle_preflight();
     }
 
-    let inbound_route = match req.method() {
-        // should take the second element as path string starts with a delimiter
-        &Method::GET => req.uri().path().split('/').nth(1).unwrap_or("").to_string(),
-        _ => req.uri().path().to_string(),
-    };
-
-    // create proxy_route before payload, as we need proxy_type from it for payload generation
-    let proxy_route = match cfg.get_proxy_route_by_inbound(&inbound_route) {
-        Some(proxy_route) => proxy_route,
-        None => {
-            log::warn!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    String::from("-"),
-                    req.uri(),
-                    "Proxy route not found, returning 404."
-                )
-            );
-            return response_by_status(StatusCode::NOT_FOUND);
-        }
+    let proxy_route = match req.method() {
+        &Method::GET => match cfg.get_proxy_route_extracting_uri_inbound(req.uri_mut()) {
+            Ok(Some(route)) => route,
+            Ok(None) => {
+                log::warn!(
+                    "{}",
+                    log_format!(
+                        remote_addr.ip(),
+                        String::from("-"),
+                        req_uri,
+                        "Proxy route not found for GET request, returning 404."
+                    )
+                );
+                return response_by_status(StatusCode::NOT_FOUND);
+            }
+            Err(e) => {
+                log::error!(
+                    "{}",
+                    log_format!(
+                        remote_addr.ip(),
+                        String::from("-"),
+                        req_uri,
+                        "Error finding proxy route for GET request: {}, returning 500.",
+                        e
+                    )
+                );
+                return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        },
+        _ => match cfg.get_proxy_route_by_inbound(req.uri().path()) {
+            Some(proxy_route) => proxy_route,
+            None => {
+                log::warn!(
+                    "{}",
+                    log_format!(
+                        remote_addr.ip(),
+                        String::from("-"),
+                        req_uri,
+                        "Proxy route not found for non-GET request, returning 404."
+                    )
+                );
+                return response_by_status(StatusCode::NOT_FOUND);
+            }
+        },
     };
 
     let (req, payload) = match generate_payload_from_req(req, &proxy_route.proxy_type).await {
@@ -207,6 +230,44 @@ fn test_get_proxy_route_by_inbound() {
     let path = url.path().to_string();
     let proxy_route = cfg.get_proxy_route_by_inbound(&path).unwrap();
     assert_eq!(proxy_route.outbound_route, "https://nft.proxy");
+}
+
+#[test]
+fn test_get_proxy_route_by_uri_inbound() {
+    use hyper::Uri;
+    use std::str::FromStr;
+
+    let cfg = ctx::get_app_config_test_instance();
+
+    // test "/nft-test" inbound case
+    let mut url = Uri::from_str("https://komodo.proxy:5535/nft-test/nft/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC").unwrap();
+    let proxy_route = cfg
+        .get_proxy_route_extracting_uri_inbound(&mut url)
+        .unwrap()
+        .unwrap();
+    assert_eq!(proxy_route.outbound_route, "https://nft.proxy");
+    let expected = Uri::from_str("https://komodo.proxy:5535/nft/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC").unwrap();
+    assert_eq!(expected, url);
+
+    // test "/nft-test/special" inbound case
+    let mut url = Uri::from_str("https://komodo.proxy:3333/nft-test/special/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC").unwrap();
+    let proxy_route = cfg
+        .get_proxy_route_extracting_uri_inbound(&mut url)
+        .unwrap()
+        .unwrap();
+    assert_eq!(proxy_route.outbound_route, "https://nft.special");
+    let expected = Uri::from_str("https://komodo.proxy:3333/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC").unwrap();
+    assert_eq!(expected, url);
+
+    // test "/" inbound case
+    let mut url = Uri::from_str("https://komodo.proxy:0333/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC").unwrap();
+    let proxy_route = cfg
+        .get_proxy_route_extracting_uri_inbound(&mut url)
+        .unwrap()
+        .unwrap();
+    assert_eq!(proxy_route.outbound_route, "https://adex.io");
+    let expected = Uri::from_str("https://komodo.proxy:0333/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC").unwrap();
+    assert_eq!(expected, url);
 }
 
 #[test]

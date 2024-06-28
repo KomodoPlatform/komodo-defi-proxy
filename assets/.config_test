@@ -34,6 +34,34 @@
         "rp_30_min": 1000,
         "rp_60_min": 2000
       }
+    },
+    {
+      "inbound_route": "/nft-test/special",
+      "outbound_route": "https://nft.special",
+      "proxy_type": "moralis",
+      "authorized": false,
+      "allowed_rpc_methods": [],
+      "rate_limiter": {
+        "rp_1_min": 60,
+        "rp_5_min": 200,
+        "rp_15_min": 700,
+        "rp_30_min": 1000,
+        "rp_60_min": 2000
+      }
+    },
+    {
+      "inbound_route": "/",
+      "outbound_route": "https://adex.io",
+      "proxy_type": "moralis",
+      "authorized": false,
+      "allowed_rpc_methods": [],
+      "rate_limiter": {
+        "rp_1_min": 60,
+        "rp_5_min": 200,
+        "rp_15_min": 700,
+        "rp_30_min": 1000,
+        "rp_60_min": 2000
+      }
     }
   ],
   "rate_limiter": {

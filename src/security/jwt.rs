@@ -38,6 +38,7 @@ impl JwtClaims {
 }
 
 static AUTH_DECODING_KEY: OnceCell<DecodingKey> = OnceCell::new();
+
 #[allow(dead_code)]
 pub(crate) fn get_decoding_key(cfg: &AppConfig) -> &'static DecodingKey {
     let buffer_closure = || -> Vec<u8> { read_file_buffer(&cfg.pubkey_path) };

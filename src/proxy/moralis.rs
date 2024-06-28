@@ -9,11 +9,9 @@ use crate::rate_limiter::RateLimitOperations;
 use crate::sign::{SignOps, SignedMessage};
 use crate::{log_format, GenericResult};
 use hyper::header::{HeaderName, HeaderValue};
-use hyper::http::uri::PathAndQuery;
 use hyper::{header, Body, Request, Response, StatusCode, Uri};
 use hyper_tls::HttpsConnector;
 use std::net::SocketAddr;
-use std::str::FromStr;
 
 pub(crate) async fn proxy_moralis(
     cfg: &AppConfig,
@@ -41,14 +39,14 @@ pub(crate) async fn proxy_moralis(
 
     let original_req_uri = req.uri().clone();
 
-    if let Err(e) = modify_request_uri(&mut req, proxy_route) {
+    if let Err(e) = modify_request_base_uri(&mut req, proxy_route) {
         log::error!(
             "{}",
             log_format!(
                 remote_addr.ip(),
                 signed_message.address,
                 original_req_uri,
-                "Error modifying request Uri: {}, returning 500.",
+                "Error modifying request base Uri: {}, returning 500.",
                 e
             )
         );
@@ -87,43 +85,14 @@ pub(crate) async fn proxy_moralis(
     Ok(res)
 }
 
-/// Modifies the URI of an HTTP request by replacing its base URI with the outbound URI specified in `ProxyRoute`,
-/// while incorporating the path and query parameters from the original request URI. Additionally, this function
-/// removes the first path segment from the original URI.
-fn modify_request_uri(req: &mut Request<Body>, proxy_route: &ProxyRoute) -> GenericResult<()> {
+/// Modifies the request URI to use the proxy base URI from `outbound_route`.
+fn modify_request_base_uri(req: &mut Request<Body>, proxy_route: &ProxyRoute) -> GenericResult<()> {
     let proxy_base_uri = proxy_route.outbound_route.parse::<Uri>()?;
-
-    let req_uri = req.uri().clone();
-
-    // Remove the first path segment
-    let mut path_segments: Vec<&str> = req_uri
-        .path()
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .collect();
-    if !path_segments.is_empty() {
-        path_segments.remove(0);
-    }
-    let new_path = format!("/{}", path_segments.join("/"));
-
-    // Construct the new path and query
-    let path_and_query_str = match req_uri.query() {
-        Some(query) => format!("{}?{}", new_path, query),
-        None => new_path,
-    };
-
-    let path_and_query = PathAndQuery::from_str(&path_and_query_str)?;
-
-    // Update the proxy URI with the new path and query
-    let mut proxy_outbound_parts = proxy_base_uri.into_parts();
-    proxy_outbound_parts.path_and_query = Some(path_and_query);
-
-    // Reconstruct the full URI with the updated parts
-    let new_uri = Uri::from_parts(proxy_outbound_parts)?;
-
-    // Update the request URI
+    let original_uri = req.uri();
+    let mut base_uri_parts = proxy_base_uri.into_parts();
+    base_uri_parts.path_and_query = original_uri.path_and_query().cloned();
+    let new_uri = Uri::from_parts(base_uri_parts)?;
     *req.uri_mut() = new_uri;
-
     Ok(())
 }
 
@@ -283,9 +252,10 @@ async fn test_parse_moralis_payload() {
 #[tokio::test]
 async fn test_modify_request_uri() {
     use super::ProxyType;
+    use std::str::FromStr;
 
     let mut req = Request::builder()
-        .uri("https://komodoproxy.com/nft-proxy/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC")
+        .uri("https://komodoproxy.com/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC")
         .body(Body::empty())
         .unwrap();
 
@@ -298,7 +268,7 @@ async fn test_modify_request_uri() {
         rate_limiter: None,
     };
 
-    modify_request_uri(&mut req, &proxy_route).unwrap();
+    modify_request_base_uri(&mut req, &proxy_route).unwrap();
 
     assert_eq!(
         req.uri(),
