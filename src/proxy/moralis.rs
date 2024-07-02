@@ -39,7 +39,7 @@ pub(crate) async fn proxy_moralis(
 
     let original_req_uri = req.uri().clone();
 
-    if let Err(e) = modify_request_base_uri(&mut req, proxy_route) {
+    if let Err(e) = modify_request_uri(&mut req, proxy_route) {
         log::error!(
             "{}",
             log_format!(
@@ -85,12 +85,27 @@ pub(crate) async fn proxy_moralis(
     Ok(res)
 }
 
-/// Modifies the request URI to use the proxy base URI from `outbound_route`.
-fn modify_request_base_uri(req: &mut Request<Body>, proxy_route: &ProxyRoute) -> GenericResult<()> {
+/// This function removes the matched inbound route from the request URI and
+/// replaces request base URI with the outbound route specified in the proxy route.
+fn modify_request_uri(req: &mut Request<Body>, proxy_route: &ProxyRoute) -> GenericResult<()> {
     let proxy_base_uri = proxy_route.outbound_route.parse::<Uri>()?;
     let original_uri = req.uri();
+
+    let original_path_and_query = original_uri
+        .path_and_query()
+        .map(|pq| pq.as_str())
+        .unwrap_or("");
+    // Remove the "inbound_route" part from the original path and query
+    let remaining_path_and_query = if proxy_route.inbound_route == "/" {
+        original_path_and_query
+    } else {
+        original_path_and_query
+            .strip_prefix(&proxy_route.inbound_route)
+            .ok_or("Route doesn't match with the given inbound URL.")?
+    };
+
     let mut base_uri_parts = proxy_base_uri.into_parts();
-    base_uri_parts.path_and_query = original_uri.path_and_query().cloned();
+    base_uri_parts.path_and_query = Some(remaining_path_and_query.parse()?);
     let new_uri = Uri::from_parts(base_uri_parts)?;
     *req.uri_mut() = new_uri;
     Ok(())
@@ -254,24 +269,53 @@ async fn test_modify_request_uri() {
     use super::ProxyType;
     use std::str::FromStr;
 
+    const EXPECTED_URI: &str = "http://localhost:8000/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC";
+
     let mut req = Request::builder()
-        .uri("https://komodoproxy.com/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC")
+        .uri("https://komodo.proxy:5535/nft-test/nft/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC")
         .body(Body::empty())
         .unwrap();
-
     let proxy_route = ProxyRoute {
-        inbound_route: String::from_str("/nft-proxy").unwrap(),
+        inbound_route: String::from_str("/nft-test").unwrap(),
         outbound_route: "http://localhost:8000".to_string(),
         proxy_type: ProxyType::Moralis,
         authorized: false,
         allowed_rpc_methods: vec![],
         rate_limiter: None,
     };
-
-    modify_request_base_uri(&mut req, &proxy_route).unwrap();
-
+    modify_request_uri(&mut req, &proxy_route).unwrap();
     assert_eq!(
         req.uri(),
-        "http://localhost:8000/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC"
+        "http://localhost:8000/nft/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC"
     );
+
+    let mut req = Request::builder()
+        .uri("https://komodo.proxy:5535/nft-test/special/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC")
+        .body(Body::empty())
+        .unwrap();
+    let proxy_route = ProxyRoute {
+        inbound_route: String::from_str("/nft-test/special").unwrap(),
+        outbound_route: "http://localhost:8000".to_string(),
+        proxy_type: ProxyType::Moralis,
+        authorized: false,
+        allowed_rpc_methods: vec![],
+        rate_limiter: None,
+    };
+    modify_request_uri(&mut req, &proxy_route).unwrap();
+    assert_eq!(req.uri(), EXPECTED_URI);
+
+    let mut req = Request::builder()
+        .uri("https://komodo.proxy:5535/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC")
+        .body(Body::empty())
+        .unwrap();
+    let proxy_route = ProxyRoute {
+        inbound_route: String::from_str("/").unwrap(),
+        outbound_route: "http://localhost:8000".to_string(),
+        proxy_type: ProxyType::Moralis,
+        authorized: false,
+        allowed_rpc_methods: vec![],
+        rate_limiter: None,
+    };
+    modify_request_uri(&mut req, &proxy_route).unwrap();
+    assert_eq!(req.uri(), EXPECTED_URI);
 }
