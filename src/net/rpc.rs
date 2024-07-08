@@ -1,6 +1,6 @@
 use bytes::Buf;
 use ctx::AppConfig;
-use http::insert_jwt_to_http_header;
+use http::{insert_jwt_to_http_header, APPLICATION_JSON};
 use hyper::{body::aggregate, header, Body, Request};
 use hyper_tls::HttpsConnector;
 use serde_json::from_reader;
@@ -27,7 +27,7 @@ impl RpcClient {
     ) -> GenericResult<Json> {
         let mut req = Request::post(&self.url).body(Body::from(payload.to_string()))?;
         req.headers_mut()
-            .append(header::CONTENT_TYPE, "application/json".parse()?);
+            .append(header::CONTENT_TYPE, APPLICATION_JSON.parse()?);
 
         if is_authorized {
             insert_jwt_to_http_header(cfg, req.headers_mut()).await?;

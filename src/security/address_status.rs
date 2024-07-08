@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use bytes::Buf;
 use ctx::AppConfig;
 use db::Db;
+use http::APPLICATION_JSON;
 use hyper::{header, Body, Request, Response, StatusCode};
 use redis::FromRedisValue;
 use serde::{Deserialize, Serialize};
@@ -28,7 +29,7 @@ pub(crate) async fn post_address_status(
 
     Ok(Response::builder()
         .status(StatusCode::NO_CONTENT)
-        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_TYPE, APPLICATION_JSON)
         .body(Body::from(Vec::new()))?)
 }
 
@@ -47,7 +48,7 @@ pub(crate) async fn get_address_status_list(cfg: &AppConfig) -> GenericResult<Re
 
     Ok(Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_TYPE, APPLICATION_JSON)
         .body(Body::from(serialized))?)
 }
 
@@ -81,6 +82,7 @@ impl FromRedisValue for AddressStatus {
 
 #[async_trait]
 pub(crate) trait AddressStatusOperations {
+    #[allow(dead_code)]
     async fn insert_address_status(
         &mut self,
         address: String,
@@ -96,6 +98,7 @@ pub(crate) trait AddressStatusOperations {
 
 #[async_trait]
 impl AddressStatusOperations for Db {
+    #[allow(dead_code)]
     async fn insert_address_status(
         &mut self,
         address: String,
@@ -104,7 +107,7 @@ impl AddressStatusOperations for Db {
         Ok(redis::cmd("HSET")
             .arg(DB_STATUS_LIST)
             .arg(&[address, format!("{}", status as i8)])
-            .query_async(&mut self.connection)
+            .query_async::<_, ()>(&mut self.connection)
             .await?)
     }
 
@@ -118,7 +121,7 @@ impl AddressStatusOperations for Db {
             .map(|v| (v.address.clone(), v.status))
             .collect();
         pipe.hset_multiple(DB_STATUS_LIST, &formatted);
-        pipe.query_async(&mut self.connection).await?;
+        pipe.query_async::<_, ()>(&mut self.connection).await?;
 
         Ok(())
     }

@@ -1,28 +1,74 @@
 {
-	"port": 5000,
-	"redis_connection_string": "dummy-value",
-	"pubkey_path": "dummy-value",
-	"privkey_path": "dummy-value",
-	"token_expiration_time": 300,
-	"proxy_routes": [
-		{
-			"inbound_route": "/test",
-			"outbound_route": "https://komodoplatform.com",
-			"authorized": false,
-			"allowed_methods": []
-		},
-		{
-			"inbound_route": "/test-2",
-			"outbound_route": "https://atomicdex.io",
-			"authorized": false,
-			"allowed_methods": []
-		}
-	],
-	"rate_limiter": {
-		"rp_1_min": 555,
-		"rp_5_min": 555,
-		"rp_15_min": 555,
-		"rp_30_min": 555,
-		"rp_60_min": 555
-	}
+  "port": 6150,
+  "redis_connection_string": "redis://redis:6379",
+  "pubkey_path": "/usr/src/komodo-defi-proxy/assets/.pubkey_test",
+  "privkey_path": "/usr/src/komodo-defi-proxy/assets/.privkey_test",
+  "token_expiration_time": 300,
+  "proxy_routes": [
+    {
+      "inbound_route": "/test",
+      "outbound_route": "https://komodoplatform.com",
+      "proxy_type": "quicknode",
+      "authorized": false,
+      "allowed_rpc_methods": [],
+      "rate_limiter": null
+    },
+    {
+      "inbound_route": "/test-2",
+      "outbound_route": "https://atomicdex.io",
+      "proxy_type": "quicknode",
+      "authorized": false,
+      "allowed_rpc_methods": [],
+      "rate_limiter": null
+    },
+    {
+      "inbound_route": "/nft-test",
+      "outbound_route": "https://nft.proxy",
+      "proxy_type": "moralis",
+      "authorized": false,
+      "allowed_rpc_methods": [],
+      "rate_limiter": {
+        "rp_1_min": 60,
+        "rp_5_min": 200,
+        "rp_15_min": 700,
+        "rp_30_min": 1000,
+        "rp_60_min": 2000
+      }
+    },
+    {
+      "inbound_route": "/nft-test/special",
+      "outbound_route": "https://nft.special",
+      "proxy_type": "moralis",
+      "authorized": false,
+      "allowed_rpc_methods": [],
+      "rate_limiter": {
+        "rp_1_min": 60,
+        "rp_5_min": 200,
+        "rp_15_min": 700,
+        "rp_30_min": 1000,
+        "rp_60_min": 2000
+      }
+    },
+    {
+      "inbound_route": "/",
+      "outbound_route": "https://adex.io",
+      "proxy_type": "moralis",
+      "authorized": false,
+      "allowed_rpc_methods": [],
+      "rate_limiter": {
+        "rp_1_min": 60,
+        "rp_5_min": 200,
+        "rp_15_min": 700,
+        "rp_30_min": 1000,
+        "rp_60_min": 2000
+      }
+    }
+  ],
+  "rate_limiter": {
+    "rp_1_min": 555,
+    "rp_5_min": 555,
+    "rp_15_min": 555,
+    "rp_30_min": 555,
+    "rp_60_min": 555
+  }
 }

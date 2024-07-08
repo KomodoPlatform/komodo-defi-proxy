@@ -36,7 +36,6 @@ impl Db {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) async fn key_exists(&mut self, key: &str) -> GenericResult<bool> {
         Ok(redis::cmd("EXISTS")
             .arg(key)
@@ -54,7 +53,7 @@ impl Db {
             .arg(key)
             .arg(seconds)
             .arg(value)
-            .query_async(&mut self.connection)
+            .query_async::<_, ()>(&mut self.connection)
             .await?;
 
         Ok(())

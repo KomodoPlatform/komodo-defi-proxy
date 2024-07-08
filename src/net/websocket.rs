@@ -10,9 +10,9 @@ use tokio_tungstenite::{
 
 use crate::{
     ctx::AppConfig,
-    http::{response_by_status, RpcPayload},
+    http::response_by_status,
     log_format,
-    server::validation_middleware,
+    proxy::{validation_middleware_quicknode, QuicknodeSocketPayload},
     GenericResult,
 };
 
@@ -26,8 +26,8 @@ pub(crate) async fn socket_handler(
     mut req: Request<Body>,
     remote_addr: SocketAddr,
 ) -> GenericResult<Response<Body>> {
-    let inbound_route = req.uri().to_string();
-    let proxy_route = match cfg.get_proxy_route_by_inbound(inbound_route) {
+    let inbound_route = req.uri().path().to_string();
+    let proxy_route = match cfg.get_proxy_route_by_inbound(&inbound_route) {
         Some(proxy_route) => proxy_route.clone(),
         None => {
             log::warn!(
@@ -137,7 +137,7 @@ pub(crate) async fn socket_handler(
                                             match msg {
                                                 Some(Ok(msg)) => {
                                                     if let Message::Text(msg) = msg {
-                                                         let payload: RpcPayload = match serde_json::from_str(&msg) {
+                                                         let socket_payload: QuicknodeSocketPayload = match serde_json::from_str(&msg) {
                                                              Ok(t) => t,
                                                              Err(e) => {
                                                                  if let Err(e) = inbound_socket.send(format!("Invalid payload. {e}").into()).await {
@@ -155,9 +155,9 @@ pub(crate) async fn socket_handler(
                                                                  continue;
                                                              },
                                                          };
+                                                        let (payload, signed_message) = socket_payload.into_parts();
 
-
-                                                        if !proxy_route.allowed_methods.contains(&payload.method) {
+                                                        if !proxy_route.allowed_rpc_methods.contains(&payload.method) {
                                                              if let Err(e) = inbound_socket.send("Method not allowed.".into()).await {
                                                                  log::error!(
                                                                      "{}",
@@ -173,9 +173,10 @@ pub(crate) async fn socket_handler(
                                                              continue;
                                                         }
 
-                                                        match validation_middleware(
+                                                        // TODO add general validation_middleware support (if have new features which support websocket)
+                                                        match validation_middleware_quicknode(
                                                             &cfg,
-                                                            &payload,
+                                                            &signed_message,
                                                             &proxy_route,
                                                             req.uri(),
                                                             &remote_addr,
@@ -236,7 +237,7 @@ pub(crate) async fn socket_handler(
                                                 _ => break
                                             };
                                         }
-                                    };
+                                    }
                                 }
                             }
                             e => {

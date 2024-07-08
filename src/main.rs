@@ -10,8 +10,7 @@ mod db;
 mod http;
 #[path = "security/jwt.rs"]
 mod jwt;
-#[path = "security/proof_of_funding.rs"]
-mod proof_of_funding;
+mod proxy;
 #[path = "security/rate_limiter.rs"]
 mod rate_limiter;
 #[path = "net/rpc.rs"]
@@ -27,7 +26,12 @@ mod websocket;
 #[global_allocator]
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
+/// A type alias for a generic error, encompassing any error that implements the `Error` trait,
+/// along with traits for thread-safe error handling (`Send` and `Sync`).
+/// This type is typically used across the application to handle errors uniformly.
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
+/// A type alias for a generic result, used throughout the application to encapsulate the
+/// outcome of operations that might fail with a `GenericError`.
 type GenericResult<T> = std::result::Result<T, GenericError>;
 
 #[tokio::main]

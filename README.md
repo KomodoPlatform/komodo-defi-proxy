@@ -12,29 +12,31 @@ Create the configuration file for app runtime.
 
 ```json
 {
-	"port": 6150,
-	"pubkey_path": "/path_to_publick_key.pem",
-	"privkey_path": "/path_to_private_key.pem",
-	"redis_connection_string": "redis://localhost",
-	"token_expiration_time": 300,
-	"proxy_routes": [
-		{
-			"inbound_route": "/dev",
-			"outbound_route": "http://localhost:8000",
-			"authorized": false,
-			"allowed_methods": [
-				"eth_blockNumber",
-				"eth_gasPrice"
-			]
-		}
-	],
-	"rate_limiter": {
-		"rp_1_min": 30,
-		"rp_5_min": 100,
-		"rp_15_min": 200,
-		"rp_30_min": 350,
-		"rp_60_min": 575
-	}
+  "port": 6150,
+  "pubkey_path": "/path_to_publick_key.pem",
+  "privkey_path": "/path_to_private_key.pem",
+  "redis_connection_string": "redis://localhost",
+  "token_expiration_time": 300,
+  "proxy_routes": [
+    {
+      "inbound_route": "/dev",
+      "outbound_route": "http://localhost:8000",
+      "proxy_type": "quicknode",
+      "authorized": false,
+      "allowed_rpc_methods": [
+        "eth_blockNumber",
+        "eth_gasPrice"
+      ],
+      "rate_limiter": null
+    }
+  ],
+  "rate_limiter": {
+    "rp_1_min": 30,
+    "rp_5_min": 100,
+    "rp_15_min": 200,
+    "rp_30_min": 350,
+    "rp_60_min": 575
+  }
 }
 ```
 
@@ -54,17 +56,34 @@ Expose configuration file's path as an environment variable in `AUTH_APP_CONFIG_
 
 3) If the incoming request comes from the same network, step 4 will be by-passed.
 
-4) Request will be handled in the middleware with:
-   - Status Checker: Checks if the wallet address status is blocked, allowed, or trusted and does the following:
-   	- Blocked: Return `403 Forbidden` immediately
-	- Allowed: process continues with the rate limiter
-	- Trusted: bypass rate limiter and proof of funding
-   - Rate Limiter: First, verify the signed message, and if not valid, return 401 Unauthorized immediately. If valid, then calculate the request count with time interval specified in the application configuration. If the wallet address sent too many request than the expected amount, process continues with the proof of funding. If not, by-passes the proof of funding.
-   - Proof of Funding: Return `406 Not Acceptable` if wallet has 0 balance. Otherwise, we assume that request is valid and process continues as usual.
+4) Request Handling in the Middleware:
 
-5) Find target route by requested endpoint
+   **For Quicknode:**
+   - **Status Checker**:
+     - **Blocked**: Return `403 Forbidden` immediately.
+     - **Allowed**: Process continues with the rate limiter.
+     - **Trusted**: Bypass rate limiter and proof of funding.
 
-6) Check if requested rpc call is allowed in application configuration
+   - **Rate Limiter**:
+     - First, verify the signed message. If not valid, return `401 Unauthorized` immediately.
+     - If valid, calculate the request count with the time interval specified in the application configuration. If the wallet address has sent too many requests than the expected amount, process continues with the proof of funding. If not, bypass the proof of funding.
+
+   - **Proof of Funding**:
+     - Return `406 Not Acceptable` if the wallet has a 0 balance. Otherwise, assume the request is valid and process it as usual.
+
+   **For Moralis:**
+   - **Status Checker**:
+     - **Blocked**: Return `403 Forbidden` immediately.
+     - **Allowed**: Process continues with the rate limiter.
+     - **Trusted**: Bypass the rate limiter.
+
+   - **Rate Limiter**:
+     - First, verify the signed message. If not valid, return `401 Unauthorized` immediately.
+     - If valid, calculate the request count with the time interval specified in the application configuration. If the wallet address has sent too many requests, return an error `406 Not Acceptable` indicating that the wallet address must wait for some time before making more requests.
+
+5) Find target route by requested endpoint.
+
+6) Check if requested rpc call is allowed in application configuration.
 
 7) Generate JWT token with RSA algorithm using pub-priv keys specified in the application configuration, and insert the token to the request header.
 
@@ -97,3 +116,27 @@ curl -v --url "'$mm2_address'" -s --data '{
 	"id": 0
 }'
 ```
+
+### How to run KomodoDefi-Proxy Service with Docker Compose
+
+If you want to test features locally, you can run Docker containers using Docker Compose commands.
+
+1. **Update Configuration**:
+   In the `.config_test` file, update the `proxy_routes` field by adding `ProxyRoutes` with the necessary parameters.
+
+2. **Run Containers in Detached Mode**:
+   To start the containers, run the following command. This will build the images if they are not already built or if changes are detected in the Dockerfile or the build context.
+   ```sh
+   docker compose up -d
+   ```
+
+3. **Follow the Logs**:
+   Open a new terminal window or tab and execute this command to follow the logs of all services defined in the Docker Compose file. The `-f` (or `--follow`) option ensures that new log entries are continuously displayed as they are produced, while the `-t` (or `--timestamps`) option adds timestamps to each log entry.
+   ```sh
+   docker compose logs -f -t
+   ```
+
+4. **Stop the Containers**:
+   ```sh
+   docker compose down
+   ```

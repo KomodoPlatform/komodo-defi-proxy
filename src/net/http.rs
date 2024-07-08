@@ -1,21 +1,20 @@
-use std::net::SocketAddr;
-
+use super::*;
+use crate::proxy::{generate_payload_from_req, proxy, validation_middleware};
+use crate::server::is_private_ip;
 use address_status::{get_address_status_list, post_address_status};
-use ctx::{AppConfig, ProxyRoute};
-use hyper::header::HeaderName;
+use ctx::AppConfig;
 use hyper::{
     header::{self, HeaderValue},
     Body, HeaderMap, Method, Request, Response, StatusCode,
 };
-use hyper_tls::HttpsConnector;
 use jwt::{get_cached_token_or_generate_one, JwtClaims};
-use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sign::SignedMessage;
+use std::net::SocketAddr;
 
-use super::*;
-use crate::server::{is_private_ip, validation_middleware};
-
+/// Header value for `hyper::header::CONTENT_TYPE`
+pub(crate) const APPLICATION_JSON: &str = "application/json";
+/// Represents `X-Forwarded-For` Header key
+pub(crate) const X_FORWARDED_FOR: &str = "x-forwarded-for";
 async fn get_healthcheck() -> GenericResult<Response<Body>> {
     let json = json!({
         "health": "ok",
@@ -26,7 +25,7 @@ async fn get_healthcheck() -> GenericResult<Response<Body>> {
         .header("Access-Control-Allow-Origin", "*")
         .header("Access-Control-Allow-Headers", "*")
         .header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_TYPE, APPLICATION_JSON)
         .body(Body::from(json.to_string()))?)
 }
 
@@ -62,132 +61,9 @@ pub(crate) async fn insert_jwt_to_http_header(
     Ok(())
 }
 
-async fn parse_payload(req: Request<Body>) -> GenericResult<(Request<Body>, RpcPayload)> {
-    let (parts, body) = req.into_parts();
-    let body_bytes = hyper::body::to_bytes(body).await?;
-
-    let payload: RpcPayload = serde_json::from_slice(&body_bytes)?;
-
-    Ok((Request::from_parts(parts, Body::from(body_bytes)), payload))
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub(crate) struct RpcPayload {
-    pub(crate) method: String,
-    pub(crate) params: serde_json::value::Value,
-    pub(crate) id: usize,
-    pub(crate) jsonrpc: String,
-    pub(crate) signed_message: SignedMessage,
-}
-
-async fn proxy(
-    cfg: &AppConfig,
-    mut req: Request<Body>,
-    remote_addr: &SocketAddr,
-    payload: RpcPayload,
-    x_forwarded_for: HeaderValue,
-    proxy_route: &ProxyRoute,
-) -> GenericResult<Response<Body>> {
-    // check if requested method allowed
-    if !proxy_route.allowed_methods.contains(&payload.method) {
-        log::warn!(
-            "{}",
-            log_format!(
-                remote_addr.ip(),
-                payload.signed_message.address,
-                req.uri(),
-                "Method {} not allowed for, returning 403.",
-                payload.method
-            )
-        );
-        return response_by_status(StatusCode::FORBIDDEN);
-    }
-
-    if proxy_route.authorized {
-        // modify outgoing request
-        if insert_jwt_to_http_header(cfg, req.headers_mut())
-            .await
-            .is_err()
-        {
-            log::error!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    payload.signed_message.address,
-                    req.uri(),
-                    "Error inserting JWT into http header, returning 500."
-                )
-            );
-            return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    }
-
-    let original_req_uri = req.uri().clone();
-    *req.uri_mut() = match proxy_route.outbound_route.parse() {
-        Ok(uri) => uri,
-        Err(_) => {
-            log::error!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    payload.signed_message.address,
-                    original_req_uri,
-                    "Error type casting value of {} into Uri, returning 500.",
-                    proxy_route.outbound_route
-                )
-            );
-            return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    // drop hop headers
-    for key in &[
-        header::ACCEPT_ENCODING,
-        header::CONNECTION,
-        header::HOST,
-        header::PROXY_AUTHENTICATE,
-        header::PROXY_AUTHORIZATION,
-        header::TE,
-        header::TRANSFER_ENCODING,
-        header::TRAILER,
-        header::UPGRADE,
-        header::HeaderName::from_static("keep-alive"),
-    ] {
-        req.headers_mut().remove(key);
-    }
-
-    req.headers_mut()
-        .insert(HeaderName::from_static("x-forwarded-for"), x_forwarded_for);
-    req.headers_mut()
-        .insert(header::CONTENT_TYPE, "application/json".parse()?);
-
-    let https = HttpsConnector::new();
-    let client = hyper::Client::builder().build(https);
-
-    let target_uri = req.uri().clone();
-    let res = match client.request(req).await {
-        Ok(t) => t,
-        Err(_) => {
-            log::warn!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    payload.signed_message.address,
-                    original_req_uri,
-                    "Couldn't reach {}, returning 503.",
-                    target_uri
-                )
-            );
-            return response_by_status(StatusCode::SERVICE_UNAVAILABLE);
-        }
-    };
-
-    Ok(res)
-}
-
 pub(crate) async fn http_handler(
     cfg: &AppConfig,
-    req: Request<Body>,
+    mut req: Request<Body>,
     remote_addr: SocketAddr,
 ) -> GenericResult<Response<Body>> {
     let req_uri = req.uri().clone();
@@ -217,16 +93,50 @@ pub(crate) async fn http_handler(
         return handle_preflight();
     }
 
-    let (req, payload) = match parse_payload(req).await {
+    let proxy_route = match req.method() {
+        &Method::GET => match cfg.get_proxy_route_by_uri(req.uri_mut()) {
+            Some(proxy_route) => proxy_route,
+            None => {
+                log::warn!(
+                    "{}",
+                    log_format!(
+                        remote_addr.ip(),
+                        String::from("-"),
+                        req_uri,
+                        "Proxy route not found for GET request, returning 404."
+                    )
+                );
+                return response_by_status(StatusCode::NOT_FOUND);
+            }
+        },
+        _ => match cfg.get_proxy_route_by_inbound(req.uri().path()) {
+            Some(proxy_route) => proxy_route,
+            None => {
+                log::warn!(
+                    "{}",
+                    log_format!(
+                        remote_addr.ip(),
+                        String::from("-"),
+                        req_uri,
+                        "Proxy route not found for non-GET request, returning 404."
+                    )
+                );
+                return response_by_status(StatusCode::NOT_FOUND);
+            }
+        },
+    };
+
+    let (req, payload) = match generate_payload_from_req(req, &proxy_route.proxy_type).await {
         Ok(t) => t,
-        Err(_) => {
+        Err(e) => {
             log::warn!(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
                     String::from("-"),
                     req_uri,
-                    "Recieved invalid http payload, returning 401."
+                    "Received invalid http payload: {}, returning 401.",
+                    e
                 )
             );
             return response_by_status(StatusCode::UNAUTHORIZED);
@@ -237,9 +147,9 @@ pub(crate) async fn http_handler(
         "{}",
         log_format!(
             remote_addr.ip(),
-            payload.signed_message.address,
+            payload.signed_message().address,
             req_uri,
-            "Request received."
+            "Request and payload data received."
         )
     );
 
@@ -250,28 +160,12 @@ pub(crate) async fn http_handler(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
-                    payload.signed_message.address,
+                    payload.signed_message().address,
                     req_uri,
                     "Error type casting of IpAddr into HeaderValue, returning 500."
                 )
             );
             return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    let proxy_route = match cfg.get_proxy_route_by_inbound(req.uri().to_string()) {
-        Some(proxy_route) => proxy_route,
-        None => {
-            log::warn!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    payload.signed_message.address,
-                    req.uri(),
-                    "Proxy route not found, returning 404."
-                )
-            );
-            return response_by_status(StatusCode::NOT_FOUND);
         }
     };
 
@@ -305,58 +199,47 @@ pub(crate) async fn http_handler(
 }
 
 #[test]
-fn test_rpc_payload_serialzation_and_deserialization() {
-    let json_payload = json!({
-        "method": "dummy-value",
-        "params": [],
-        "id": 1,
-        "jsonrpc": "2.0",
-        "signed_message": {
-            "coin_ticker": "ETH",
-            "address": "dummy-value",
-            "timestamp_message": 1655319963,
-            "signature": "dummy-value",
-         }
-    });
-
-    let actual_payload: RpcPayload = serde_json::from_str(&json_payload.to_string()).unwrap();
-
-    let expected_payload = RpcPayload {
-        method: String::from("dummy-value"),
-        params: json!([]),
-        id: 1,
-        jsonrpc: String::from("2.0"),
-        signed_message: SignedMessage {
-            coin_ticker: String::from("ETH"),
-            address: String::from("dummy-value"),
-            timestamp_message: 1655319963,
-            signature: String::from("dummy-value"),
-        },
-    };
-
-    assert_eq!(actual_payload, expected_payload);
-
-    // Backwards
-    let json = serde_json::to_value(expected_payload).unwrap();
-    assert_eq!(json_payload, json);
-    assert_eq!(json_payload.to_string(), json.to_string());
-}
-
-#[test]
 fn test_get_proxy_route_by_inbound() {
+    use hyper::Uri;
+    use std::str::FromStr;
+
     let cfg = ctx::get_app_config_test_instance();
 
-    let proxy_route = cfg
-        .get_proxy_route_by_inbound(String::from("/test"))
-        .unwrap();
+    let proxy_route = cfg.get_proxy_route_by_inbound("/test").unwrap();
 
     assert_eq!(proxy_route.outbound_route, "https://komodoplatform.com");
 
-    let proxy_route = cfg
-        .get_proxy_route_by_inbound(String::from("/test-2"))
-        .unwrap();
+    let proxy_route = cfg.get_proxy_route_by_inbound("/test-2").unwrap();
 
     assert_eq!(proxy_route.outbound_route, "https://atomicdex.io");
+
+    let url = Uri::from_str("https://komodo.proxy:5535/nft-test").unwrap();
+    let path = url.path().to_string();
+    let proxy_route = cfg.get_proxy_route_by_inbound(&path).unwrap();
+    assert_eq!(proxy_route.outbound_route, "https://nft.proxy");
+}
+
+#[test]
+fn test_get_proxy_route_by_uri_inbound() {
+    use hyper::Uri;
+    use std::str::FromStr;
+
+    let cfg = ctx::get_app_config_test_instance();
+
+    // test "/nft-test" inbound case
+    let mut url = Uri::from_str("https://komodo.proxy:5535/nft-test/nft/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC").unwrap();
+    let proxy_route = cfg.get_proxy_route_by_uri(&mut url).unwrap();
+    assert_eq!(proxy_route.outbound_route, "https://nft.proxy");
+
+    // test "/nft-test/special" inbound case
+    let mut url = Uri::from_str("https://komodo.proxy:3333/nft-test/special/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC").unwrap();
+    let proxy_route = cfg.get_proxy_route_by_uri(&mut url).unwrap();
+    assert_eq!(proxy_route.outbound_route, "https://nft.special");
+
+    // test "/" inbound case
+    let mut url = Uri::from_str("https://komodo.proxy:0333/api/v2.2/0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326/nft/transfers?chain=eth&format=decimal&order=DESC").unwrap();
+    let proxy_route = cfg.get_proxy_route_by_uri(&mut url).unwrap();
+    assert_eq!(proxy_route.outbound_route, "https://adex.io");
 }
 
 #[test]
@@ -373,46 +256,4 @@ fn test_respond_by_status() {
         let res = response_by_status(status_type).unwrap();
         assert_eq!(res.status(), status_type);
     }
-}
-
-#[tokio::test]
-async fn test_parse_payload() {
-    let serialized_payload = json!({
-        "method": "dummy-value",
-        "params": [],
-        "id": 1,
-        "jsonrpc": "2.0",
-        "signed_message": {
-            "coin_ticker": "ETH",
-            "address": "dummy-value",
-            "timestamp_message": 1655319963,
-            "signature": "dummy-value",
-         }
-    })
-    .to_string();
-
-    let mut req = Request::new(Body::from(serialized_payload));
-    req.headers_mut().insert(
-        HeaderName::from_static("dummy-header"),
-        "dummy-value".parse().unwrap(),
-    );
-
-    let (req, payload) = parse_payload(req).await.unwrap();
-    let header_value = req.headers().get("dummy-header").unwrap();
-
-    let expected_payload = RpcPayload {
-        method: String::from("dummy-value"),
-        params: json!([]),
-        id: 1,
-        jsonrpc: String::from("2.0"),
-        signed_message: SignedMessage {
-            coin_ticker: String::from("ETH"),
-            address: String::from("dummy-value"),
-            timestamp_message: 1655319963,
-            signature: String::from("dummy-value"),
-        },
-    };
-
-    assert_eq!(payload, expected_payload);
-    assert_eq!(header_value, "dummy-value");
 }

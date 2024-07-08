@@ -1,11 +1,13 @@
+use hyper::Uri;
+use once_cell::sync::OnceCell;
+use proxy::ProxyType;
+use serde::{Deserialize, Serialize};
 use std::env;
 
-use once_cell::sync::OnceCell;
-use serde::{Deserialize, Serialize};
-
-use super::*;
+pub(crate) use super::*;
 
 const DEFAULT_TOKEN_EXPIRATION_TIME: i64 = 3600;
+pub(crate) const DEFAULT_PORT: u16 = 5000;
 static CONFIG: OnceCell<AppConfig> = OnceCell::new();
 
 pub(crate) fn get_app_config() -> &'static AppConfig {
@@ -14,27 +16,49 @@ pub(crate) fn get_app_config() -> &'static AppConfig {
     })
 }
 
+/// Configuration settings for the application, loaded typically from a JSON configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct AppConfig {
+    /// Optional server port to listen on. If None in config file, then [DEFAULT_PORT] will be used.
     pub(crate) port: Option<u16>,
+    /// Redis database connection string.
     pub(crate) redis_connection_string: String,
+    /// File path to the public key used for user verification and authentication.
     pub(crate) pubkey_path: String,
+    /// File path to the private key used for user verification and authentication.
     pub(crate) privkey_path: String,
+    /// Optional token expiration time in seconds.
+    /// If None then the [DEFAULT_TOKEN_EXPIRATION_TIME] will be used.
     pub(crate) token_expiration_time: Option<i64>,
+    /// List of proxy routes.
     pub(crate) proxy_routes: Vec<ProxyRoute>,
+    /// The default rate limiting rules for maintaining the frequency of incoming traffic for per client.
     pub(crate) rate_limiter: RateLimiter,
 }
 
+/// Defines a routing rule for proxying requests from an inbound route to an outbound URL
+/// based on a specified proxy type and additional authorization and method filtering criteria.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct ProxyRoute {
+    /// The incoming route pattern.
     pub(crate) inbound_route: String,
+    /// The target URL to which requests are forwarded.
     pub(crate) outbound_route: String,
+    /// The type of proxying to perform, directing requests to the appropriate service or API.
+    pub(crate) proxy_type: ProxyType,
+    /// Whether authorization is required for this route.
     #[serde(default)]
     pub(crate) authorized: bool,
+    /// Specific RPC methods allowed for this route.
     #[serde(default)]
-    pub(crate) allowed_methods: Vec<String>,
+    pub(crate) allowed_rpc_methods: Vec<String>,
+    /// Optional custom rate limiter configuration for this route. If provided,
+    /// this configuration will be used instead of the default rate limiting settings.
+    pub(crate) rate_limiter: Option<RateLimiter>,
 }
 
+/// Configuration for rate limiting to manage the number of requests allowed over specified time intervals.
+/// This prevents abuse and ensures fair usage of resources among all clients.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct RateLimiter {
     pub(crate) rp_1_min: u16,
@@ -57,42 +81,96 @@ impl AppConfig {
             .unwrap_or(DEFAULT_TOKEN_EXPIRATION_TIME)
     }
 
-    pub(crate) fn get_proxy_route_by_inbound(&self, inbound: String) -> Option<&ProxyRoute> {
+    pub(crate) fn get_proxy_route_by_inbound(&self, inbound: &str) -> Option<&ProxyRoute> {
         let route_index = self.proxy_routes.iter().position(|r| {
-            r.inbound_route == inbound || r.inbound_route.to_owned() + "/" == inbound
+            r.inbound_route == inbound
+                || r.inbound_route == "/".to_owned() + inbound
+                || r.inbound_route.to_owned() + "/" == inbound
+                || "/".to_owned() + &*r.inbound_route == "/".to_owned() + inbound
         });
 
-        if let Some(index) = route_index {
-            return Some(&self.proxy_routes[index]);
-        }
+        route_index.map(|index| &self.proxy_routes[index])
+    }
 
-        None
+    #[inline(always)]
+    /// Finds the best matching proxy route based on the provided URI's.
+    pub(crate) fn get_proxy_route_by_uri(&self, uri: &mut Uri) -> Option<&ProxyRoute> {
+        self.proxy_routes
+            .iter()
+            .filter(|proxy_route| uri.path().starts_with(&proxy_route.inbound_route))
+            .max_by_key(|proxy_route| proxy_route.inbound_route.len())
     }
 }
 
 #[cfg(test)]
 pub(crate) fn get_app_config_test_instance() -> AppConfig {
     AppConfig {
-        port: Some(5000),
-        redis_connection_string: String::from("dummy-value"),
-        pubkey_path: String::from("dummy-value"),
-        privkey_path: String::from("dummy-value"),
+        port: Some(6150),
+        redis_connection_string: String::from("redis://redis:6379"),
+        pubkey_path: String::from("/usr/src/komodo-defi-proxy/assets/.pubkey_test"),
+        privkey_path: String::from("/usr/src/komodo-defi-proxy/assets/.privkey_test"),
         token_expiration_time: Some(300),
         proxy_routes: Vec::from([
             ProxyRoute {
                 inbound_route: String::from("/test"),
                 outbound_route: String::from("https://komodoplatform.com"),
+                proxy_type: ProxyType::Quicknode,
                 authorized: false,
-                allowed_methods: Vec::default(),
+                allowed_rpc_methods: Vec::default(),
+                rate_limiter: None,
             },
             ProxyRoute {
                 inbound_route: String::from("/test-2"),
                 outbound_route: String::from("https://atomicdex.io"),
+                proxy_type: ProxyType::Quicknode,
                 authorized: false,
-                allowed_methods: Vec::default(),
+                allowed_rpc_methods: Vec::default(),
+                rate_limiter: None,
+            },
+            ProxyRoute {
+                inbound_route: String::from("/nft-test"),
+                outbound_route: String::from("https://nft.proxy"),
+                proxy_type: ProxyType::Moralis,
+                authorized: false,
+                allowed_rpc_methods: Vec::default(),
+                rate_limiter: Some(RateLimiter {
+                    rp_1_min: 60,
+                    rp_5_min: 200,
+                    rp_15_min: 700,
+                    rp_30_min: 1000,
+                    rp_60_min: 2000,
+                }),
+            },
+            ProxyRoute {
+                inbound_route: String::from("/nft-test/special"),
+                outbound_route: String::from("https://nft.special"),
+                proxy_type: ProxyType::Moralis,
+                authorized: false,
+                allowed_rpc_methods: Vec::default(),
+                rate_limiter: Some(RateLimiter {
+                    rp_1_min: 60,
+                    rp_5_min: 200,
+                    rp_15_min: 700,
+                    rp_30_min: 1000,
+                    rp_60_min: 2000,
+                }),
+            },
+            ProxyRoute {
+                inbound_route: String::from("/"),
+                outbound_route: String::from("https://adex.io"),
+                proxy_type: ProxyType::Moralis,
+                authorized: false,
+                allowed_rpc_methods: Vec::default(),
+                rate_limiter: Some(RateLimiter {
+                    rp_1_min: 60,
+                    rp_5_min: 200,
+                    rp_15_min: 700,
+                    rp_30_min: 1000,
+                    rp_60_min: 2000,
+                }),
             },
         ]),
-        rate_limiter: ctx::RateLimiter {
+        rate_limiter: RateLimiter {
             rp_1_min: 555,
             rp_5_min: 555,
             rp_15_min: 555,
@@ -105,23 +183,69 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
 #[test]
 fn test_app_config_serialzation_and_deserialization() {
     let json_config = serde_json::json!({
-        "port": 5000,
-        "redis_connection_string": "dummy-value",
-        "pubkey_path": "dummy-value",
-        "privkey_path": "dummy-value",
+        "port": 6150,
+        "redis_connection_string": "redis://redis:6379",
+        "pubkey_path": "/usr/src/komodo-defi-proxy/assets/.pubkey_test",
+        "privkey_path": "/usr/src/komodo-defi-proxy/assets/.privkey_test",
         "token_expiration_time": 300,
         "proxy_routes": [
             {
                 "inbound_route": "/test",
                 "outbound_route": "https://komodoplatform.com",
+                "proxy_type":"quicknode",
                 "authorized": false,
-                "allowed_methods": []
+                "allowed_rpc_methods": [],
+                "rate_limiter": null
             },
             {
                 "inbound_route": "/test-2",
                 "outbound_route": "https://atomicdex.io",
+                "proxy_type":"quicknode",
                 "authorized": false,
-                "allowed_methods": []
+                "allowed_rpc_methods": [],
+                "rate_limiter": null
+            },
+            {
+                "inbound_route": "/nft-test",
+                "outbound_route": "https://nft.proxy",
+                "proxy_type":"moralis",
+                "authorized": false,
+                "allowed_rpc_methods": [],
+                "rate_limiter": {
+                    "rp_1_min": 60,
+                    "rp_5_min": 200,
+                    "rp_15_min": 700,
+                    "rp_30_min": 1000,
+                    "rp_60_min": 2000
+                }
+            },
+            {
+                "inbound_route": "/nft-test/special",
+                "outbound_route": "https://nft.special",
+                "proxy_type":"moralis",
+                "authorized": false,
+                "allowed_rpc_methods": [],
+                "rate_limiter": {
+                    "rp_1_min": 60,
+                    "rp_5_min": 200,
+                    "rp_15_min": 700,
+                    "rp_30_min": 1000,
+                    "rp_60_min": 2000
+                }
+            },
+            {
+                "inbound_route": "/",
+                "outbound_route": "https://adex.io",
+                "proxy_type":"moralis",
+                "authorized": false,
+                "allowed_rpc_methods": [],
+                "rate_limiter": {
+                    "rp_1_min": 60,
+                    "rp_5_min": 200,
+                    "rp_15_min": 700,
+                    "rp_30_min": 1000,
+                    "rp_60_min": 2000
+                }
             }
         ],
         "rate_limiter": {

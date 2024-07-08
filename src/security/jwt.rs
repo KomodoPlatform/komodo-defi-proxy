@@ -38,6 +38,7 @@ impl JwtClaims {
 }
 
 static AUTH_DECODING_KEY: OnceCell<DecodingKey> = OnceCell::new();
+
 #[allow(dead_code)]
 pub(crate) fn get_decoding_key(cfg: &AppConfig) -> &'static DecodingKey {
     let buffer_closure = || -> Vec<u8> { read_file_buffer(&cfg.pubkey_path) };
@@ -102,7 +103,7 @@ pub(crate) async fn generate_jwt_and_cache_it(
         .arg("EX")
         .arg(cfg.token_expiration_time() - 60) // expire 60 seconds before token's expiration
         .arg("NX")
-        .query_async(&mut conn)
+        .query_async::<_, ()>(&mut conn)
         .await?;
 
     Ok(token)

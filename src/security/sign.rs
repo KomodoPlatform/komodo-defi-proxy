@@ -16,11 +16,17 @@ pub(crate) trait SignOps {
     fn is_valid_checksum_addr(&self) -> bool;
     fn valid_addr_from_str(&self) -> Result<Address, String>;
     fn addr_from_str(&self) -> Result<Address, String>;
+    #[allow(dead_code)]
     fn sign_message(&mut self, secret: &Secret) -> GenericResult<()>;
     fn verify_message(&self) -> GenericResult<bool>;
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+/// Represents a signed message used for authenticating and validating requests processed by the proxy.
+///
+/// This structure contains cryptographic elements (`signature`) and metadata (`coin_ticker`, `address`, `timestamp_message`)
+/// that are used to verify the authenticity and integrity of a request to the proxy. This is essential for securing
+/// the proxy operations and preventing unauthorized access.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct SignedMessage {
     pub(crate) coin_ticker: String,
     pub(crate) address: String,
@@ -99,6 +105,7 @@ impl SignOps for SignedMessage {
         Address::from_str(&self.address[2..]).map_err(|e| e.to_string())
     }
 
+    #[allow(dead_code)]
     fn sign_message(&mut self, secret: &Secret) -> GenericResult<()> {
         let signature = sign(secret, &H256::from(self.sign_message_hash()))?;
         self.signature = format!("0x{}", signature);
