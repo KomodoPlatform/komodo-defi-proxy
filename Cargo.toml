@@ -26,10 +26,9 @@ simple_logger = "2.1.0"
 tokio = { version = "1.12.0", default-features = false, features = ["macros", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = { version = "0.20.0", features = ["native-tls"] }
 # From our sources
-bitcrypto = { git = "https://github.com/KomodoPlatform/komodo-defi-framework", branch = "cosmos-kdp-impl" }
 ethkey = { git = "https://github.com/artemii235/parity-ethereum.git" }
-serialization = { git = "https://github.com/KomodoPlatform/komodo-defi-framework", branch = "cosmos-kdp-impl" }
 url = { version = "2.2.2", features = ["serde"] }
+proxy_signature = { git = "https://github.com/KomodoPlatform/komodo-defi-framework", rev = "0784f1a" }
 
 [target.x86_64-unknown-linux-gnu.dependencies]
 jemallocator = "0.5.0"
