@@ -46,9 +46,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
 
 [[package]]
+name = "bitcoin_hashes"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90064b8dee6815a6470d60bad07bbbaee885c0e12d04177138fa3291a01b7bc4"
+
+[[package]]
 name = "bitcrypto"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/atomicDEX-API?branch=dev#3be0c0449045ef0ffbf4f4dadb714368eb8fb74b"
+source = "git+https://github.com/KomodoPlatform/komodo-defi-framework?branch=cosmos-kdp-impl#4c0e2da084f42cec9d1baad907bd7b0132b352b8"
 dependencies = [
  "groestl",
  "primitives",
@@ -915,8 +921,9 @@ checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
 [[package]]
 name = "primitives"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/atomicDEX-API?branch=dev#3be0c0449045ef0ffbf4f4dadb714368eb8fb74b"
+source = "git+https://github.com/KomodoPlatform/komodo-defi-framework?branch=cosmos-kdp-impl#4c0e2da084f42cec9d1baad907bd7b0132b352b8"
 dependencies = [
+ "bitcoin_hashes",
  "byteorder",
  "rustc-hex 2.1.0",
  "uint 0.9.3",
@@ -1280,7 +1287,7 @@ dependencies = [
 [[package]]
 name = "serialization"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/atomicDEX-API?branch=dev#3be0c0449045ef0ffbf4f4dadb714368eb8fb74b"
+source = "git+https://github.com/KomodoPlatform/komodo-defi-framework?branch=cosmos-kdp-impl#4c0e2da084f42cec9d1baad907bd7b0132b352b8"
 dependencies = [
  "byteorder",
  "derive_more",
@@ -1314,15 +1321,13 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.9.9"
+version = "0.10.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d58a1e1bf39749807d89cf2d98ac2dfa0ff1cb3faa38fbb64dd88ac8013d800"
+checksum = "793db75ad2bcafc3ffa7c68b215fee268f537982cd901d132f89c6343f3a3dc8"
 dependencies = [
- "block-buffer 0.9.0",
  "cfg-if",
  "cpufeatures",
- "digest 0.9.0",
- "opaque-debug",
+ "digest 0.10.7",
 ]
 
 [[package]]
@@ -1435,7 +1440,7 @@ dependencies = [
 [[package]]
 name = "test_helpers"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/atomicDEX-API?branch=dev#3be0c0449045ef0ffbf4f4dadb714368eb8fb74b"
+source = "git+https://github.com/KomodoPlatform/komodo-defi-framework?branch=cosmos-kdp-impl#4c0e2da084f42cec9d1baad907bd7b0132b352b8"
 dependencies = [
  "hex",
 ]
