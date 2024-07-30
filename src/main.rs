@@ -17,8 +17,6 @@ mod rate_limiter;
 mod rpc;
 #[path = "net/server.rs"]
 mod server;
-#[path = "security/sign.rs"]
-mod sign;
 #[path = "net/websocket.rs"]
 mod websocket;
 

@@ -7,11 +7,11 @@ use crate::http::{
 use crate::proxy::remove_hop_by_hop_headers;
 use crate::rate_limiter::RateLimitOperations;
 use crate::rpc::Json;
-use crate::sign::{SignOps, SignedMessage};
 use crate::{log_format, rpc, GenericResult};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{header, Body, Request, Response, StatusCode, Uri};
 use hyper_tls::HttpsConnector;
+use proxy_signature::ProxySign;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::net::SocketAddr;
@@ -34,11 +34,11 @@ pub(crate) struct QuicknodeSocketPayload {
     pub(crate) params: serde_json::value::Value,
     pub(crate) id: usize,
     pub(crate) jsonrpc: String,
-    pub(crate) signed_message: SignedMessage,
+    pub(crate) signed_message: ProxySign,
 }
 
 impl QuicknodeSocketPayload {
-    pub(crate) fn into_parts(self) -> (QuicknodePayload, SignedMessage) {
+    pub(crate) fn into_parts(self) -> (QuicknodePayload, ProxySign) {
         let payload = QuicknodePayload {
             method: self.method,
             params: self.params,
@@ -64,7 +64,7 @@ pub(crate) async fn proxy_quicknode(
     mut req: Request<Body>,
     remote_addr: &SocketAddr,
     payload: QuicknodePayload,
-    signed_message: SignedMessage,
+    signed_message: ProxySign,
     x_forwarded_for: HeaderValue,
     proxy_route: &ProxyRoute,
 ) -> GenericResult<Response<Body>> {
@@ -74,7 +74,7 @@ pub(crate) async fn proxy_quicknode(
             "{}",
             log_format!(
                 remote_addr.ip(),
-                signed_message.address,
+                "ADDRESS_TODO",
                 req.uri(),
                 "Method {} not allowed for, returning 403.",
                 payload.method
@@ -93,7 +93,7 @@ pub(crate) async fn proxy_quicknode(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
-                    signed_message.address,
+                    "ADDRESS_TODO",
                     req.uri(),
                     "Error inserting JWT into http header, returning 500."
                 )
@@ -110,7 +110,7 @@ pub(crate) async fn proxy_quicknode(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
-                    signed_message.address,
+                    "ADDRESS_TODO",
                     original_req_uri,
                     "Error type casting value of {} into Uri: {}, returning 500.",
                     proxy_route.outbound_route,
@@ -139,7 +139,7 @@ pub(crate) async fn proxy_quicknode(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
-                    signed_message.address,
+                    "ADDRESS_TODO",
                     original_req_uri,
                     "Couldn't reach {}: {}. Returning 503.",
                     target_uri,
@@ -155,14 +155,14 @@ pub(crate) async fn proxy_quicknode(
 
 pub(crate) async fn validation_middleware_quicknode(
     cfg: &AppConfig,
-    signed_message: &SignedMessage,
+    signed_message: &ProxySign,
     proxy_route: &ProxyRoute,
     req_uri: &Uri,
     remote_addr: &SocketAddr,
 ) -> Result<(), StatusCode> {
     let mut db = Db::create_instance(cfg).await;
 
-    match db.read_address_status(&signed_message.address).await {
+    match db.read_address_status("ADDRESS_TODO").await {
         AddressStatus::Trusted => Ok(()),
         AddressStatus::Blocked => Err(StatusCode::FORBIDDEN),
         AddressStatus::None => {
@@ -174,7 +174,7 @@ pub(crate) async fn validation_middleware_quicknode(
                     "{}",
                     log_format!(
                         remote_addr.ip(),
-                        signed_message.address,
+                        "ADDRESS_TODO",
                         req_uri,
                         "Request has invalid signed message, returning 401"
                     )
@@ -184,7 +184,7 @@ pub(crate) async fn validation_middleware_quicknode(
             };
 
             let rate_limiter_key =
-                format!("{}:{}", signed_message.coin_ticker, signed_message.address);
+                format!("{}:{}", "TICKER_TODO", "ADDRESS_TODO");
 
             let rate_limiter = proxy_route
                 .rate_limiter
@@ -197,11 +197,11 @@ pub(crate) async fn validation_middleware_quicknode(
                         "{}",
                         log_format!(
                             remote_addr.ip(),
-                            signed_message.address,
+                            "ADDRESS_TODO",
                             req_uri,
                             "Rate exceed for {}, checking balance for {} address.",
                             rate_limiter_key,
-                            signed_message.address
+                            "ADDRESS_TODO"
                         )
                     );
 
@@ -212,11 +212,11 @@ pub(crate) async fn validation_middleware_quicknode(
                                 "{}",
                                 log_format!(
                                     remote_addr.ip(),
-                                    signed_message.address,
+                                    "ADDRESS_TODO",
                                     req_uri,
                                     "Wallet {} has insufficient balance for coin {}, returning 406.",
-                                    signed_message.address,
-                                    signed_message.coin_ticker,
+                                    "ADDRESS_TODO",
+                                    "TICKER_TODO",
                                 )
                             );
 
@@ -227,10 +227,10 @@ pub(crate) async fn validation_middleware_quicknode(
                                 "{}",
                                 log_format!(
                                     remote_addr.ip(),
-                                    signed_message.address,
+                                    "ADDRESS_TODO",
                                     req_uri,
                                     "verify_message_and_balance failed in coin {}: {:?}",
-                                    signed_message.coin_ticker,
+                                    "TICKER_TODO",
                                     e
                                 )
                             );
@@ -245,7 +245,7 @@ pub(crate) async fn validation_middleware_quicknode(
                     "{}",
                     log_format!(
                         remote_addr.ip(),
-                        signed_message.address,
+                        "ADDRESS_TODO",
                         req_uri,
                         "Rate incrementing failed."
                     )
@@ -259,14 +259,14 @@ pub(crate) async fn validation_middleware_quicknode(
 
 async fn verify_message_and_balance(
     cfg: &AppConfig,
-    signed_message: &SignedMessage,
+    signed_message: &ProxySign,
     proxy_route: &ProxyRoute,
 ) -> Result<(), ProofOfFundingError> {
-    if let Ok(true) = signed_message.verify_message() {
+    if let true = signed_message.is_valid_message() {
         let mut db = Db::create_instance(cfg).await;
 
         // We don't want to send balance requests everytime when user sends requests.
-        if let Ok(true) = db.key_exists(&signed_message.address).await {
+        if let Ok(true) = db.key_exists("ADDRESS_TODO").await {
             return Ok(());
         }
 
@@ -274,7 +274,7 @@ async fn verify_message_and_balance(
             "id": 1,
             "jsonrpc": "2.0",
             "method": "eth_getBalance",
-            "params": [signed_message.address, "latest"]
+            "params": ["ADDRESS_TODO", "latest"]
         });
 
         let rpc_client =
@@ -287,7 +287,7 @@ async fn verify_message_and_balance(
         {
             Ok(res) if res["result"] != Json::Null && res["result"] != "0x0" => {
                 // cache this address for 60 seconds
-                let _ = db.insert_cache(&signed_message.address, "", 60).await;
+                let _ = db.insert_cache("ADDRESS_TODO", "", 60).await;
 
                 return Ok(());
             }
