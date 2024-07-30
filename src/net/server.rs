@@ -11,6 +11,7 @@ use crate::http::{http_handler, response_by_status, X_FORWARDED_FOR};
 use crate::log_format;
 use crate::websocket::{should_upgrade_to_socket_conn, socket_handler};
 
+// TODO: replace this macro with a helper function.
 #[macro_export]
 macro_rules! log_format {
   ($ip: expr, $address: expr, $path: expr, $format: expr, $($args: tt)+) => {format!(concat!("[Ip: {} | Address: {} | Path: {}] ", $format), $ip, $address, $path, $($args)+)};

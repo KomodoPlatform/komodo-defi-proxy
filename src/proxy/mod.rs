@@ -1,8 +1,8 @@
 use crate::ctx::{AppConfig, GenericResult, ProxyRoute};
-use crate::sign::SignedMessage;
 use hyper::header;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Body, Request, Response, StatusCode, Uri};
+use proxy_signature::ProxySign;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -33,18 +33,18 @@ pub(crate) enum PayloadData {
     /// Quicknode feature requires body payload and Signed Message in X-Auth-Payload header
     Quicknode {
         payload: QuicknodePayload,
-        signed_message: SignedMessage,
+        signed_message: ProxySign,
     },
     /// Moralis feature requires only Signed Message in X-Auth-Payload header and doesn't have body
-    Moralis(SignedMessage),
+    Moralis(ProxySign),
 }
 
 impl PayloadData {
-    /// Returns a reference to the `SignedMessage` contained within the payload.
-    pub(crate) fn signed_message(&self) -> &SignedMessage {
+    /// Returns a reference to the `ProxySign` contained within the payload.
+    pub(crate) fn signed_message(&self) -> &ProxySign {
         match self {
             PayloadData::Quicknode { signed_message, .. } => signed_message,
-            PayloadData::Moralis(payload) => payload,
+            PayloadData::Moralis(signed_message) => signed_message,
         }
     }
 }
@@ -137,7 +137,7 @@ pub(crate) async fn validation_middleware(
 /// If the body is empty or the header is missing, an error is returned.
 async fn parse_body_and_auth_header<T>(
     req: Request<Body>,
-) -> GenericResult<(Request<Body>, T, SignedMessage)>
+) -> GenericResult<(Request<Body>, T, ProxySign)>
 where
     T: DeserializeOwned,
 {
@@ -147,7 +147,7 @@ where
         .get(X_AUTH_PAYLOAD)
         .ok_or("Missing X-Auth-Payload header")?
         .to_str()?;
-    let signed_message: SignedMessage = serde_json::from_str(header_value)?;
+    let signed_message: ProxySign = serde_json::from_str(header_value)?;
     let body_bytes = hyper::body::to_bytes(body).await?;
     if body_bytes.is_empty() {
         return Err("Empty body cannot be deserialized into non-optional type T".into());
@@ -157,15 +157,15 @@ where
     Ok((new_req, payload, signed_message))
 }
 
-/// Parses [SignedMessage] value from X-Auth-Payload header
-async fn parse_auth_header(req: Request<Body>) -> GenericResult<(Request<Body>, SignedMessage)> {
+/// Parses [ProxySign] value from X-Auth-Payload header
+async fn parse_auth_header(req: Request<Body>) -> GenericResult<(Request<Body>, ProxySign)> {
     let (parts, body) = req.into_parts();
     let header_value = parts
         .headers
         .get(X_AUTH_PAYLOAD)
         .ok_or("Missing X-Auth-Payload header")?
         .to_str()?;
-    let payload: SignedMessage = serde_json::from_str(header_value)?;
+    let payload: ProxySign = serde_json::from_str(header_value)?;
     let new_req = Request::from_parts(parts, body);
     Ok((new_req, payload))
 }

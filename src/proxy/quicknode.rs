@@ -6,14 +6,12 @@ use crate::http::{
 };
 use crate::proxy::remove_hop_by_hop_headers;
 use crate::rate_limiter::RateLimitOperations;
-use crate::rpc::Json;
-use crate::{log_format, rpc, GenericResult};
+use crate::{log_format, GenericResult};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{header, Body, Request, Response, StatusCode, Uri};
 use hyper_tls::HttpsConnector;
 use proxy_signature::ProxySign;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::net::SocketAddr;
 
 /// Represents a payload for JSON-RPC calls, tailored for the Quicknode API within the proxy.
@@ -166,10 +164,7 @@ pub(crate) async fn validation_middleware_quicknode(
         AddressStatus::Trusted => Ok(()),
         AddressStatus::Blocked => Err(StatusCode::FORBIDDEN),
         AddressStatus::None => {
-            let signed_message_status =
-                verify_message_and_balance(cfg, signed_message, proxy_route).await;
-
-            if let Err(ProofOfFundingError::InvalidSignedMessage) = signed_message_status {
+            if !signed_message.is_valid_message() {
                 log::warn!(
                     "{}",
                     log_format!(
@@ -183,7 +178,8 @@ pub(crate) async fn validation_middleware_quicknode(
                 return Err(StatusCode::UNAUTHORIZED);
             };
 
-            let rate_limiter_key = format!("{}:{}", "TICKER_TODO", signed_message.address);
+            let rate_limiter_key =
+                format!("{}:{}", proxy_route.inbound_route, signed_message.address);
 
             let rate_limiter = proxy_route
                 .rate_limiter
@@ -204,37 +200,20 @@ pub(crate) async fn validation_middleware_quicknode(
                         )
                     );
 
-                    match verify_message_and_balance(cfg, signed_message, proxy_route).await {
-                        Ok(_) => {}
-                        Err(ProofOfFundingError::InsufficientBalance) => {
-                            log::warn!(
-                                "{}",
-                                log_format!(
-                                    remote_addr.ip(),
-                                    signed_message.address,
-                                    req_uri,
-                                    "Wallet {} has insufficient balance for coin {}, returning 406.",
-                                    signed_message.address,
-                                    "TICKER_TODO",
-                                )
-                            );
+                    if !signed_message.is_valid_message() {
+                        log::error!(
+                            "{}",
+                            log_format!(
+                                remote_addr.ip(),
+                                signed_message.address,
+                                req_uri,
+                                "Node '{}' sent invalid signed message to inbound '{}', returning 401.",
+                                signed_message.address,
+                                proxy_route.inbound_route
+                            )
+                        );
 
-                            return Err(StatusCode::NOT_ACCEPTABLE);
-                        }
-                        e => {
-                            log::error!(
-                                "{}",
-                                log_format!(
-                                    remote_addr.ip(),
-                                    signed_message.address,
-                                    req_uri,
-                                    "verify_message_and_balance failed in coin {}: {:?}",
-                                    "TICKER_TODO",
-                                    e
-                                )
-                            );
-                            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-                        }
+                        return Err(StatusCode::UNAUTHORIZED);
                     }
                 }
             };
@@ -254,50 +233,4 @@ pub(crate) async fn validation_middleware_quicknode(
             Ok(())
         }
     }
-}
-
-// TODO: don't check balance
-async fn verify_message_and_balance(
-    cfg: &AppConfig,
-    signed_message: &ProxySign,
-    proxy_route: &ProxyRoute,
-) -> Result<(), ProofOfFundingError> {
-    if let true = signed_message.is_valid_message() {
-        let mut db = Db::create_instance(cfg).await;
-
-        // We don't want to send balance requests everytime when user sends requests.
-        if let Ok(true) = db.key_exists(&signed_message.address).await {
-            return Ok(());
-        }
-
-        let rpc_payload = json!({
-            "id": 1,
-            "jsonrpc": "2.0",
-            "method": "eth_getBalance",
-            "params": [signed_message.address, "latest"]
-        });
-
-        let rpc_client =
-            // TODO: Use the current transport instead of forcing to use http (even if it's rare, this might not work on certain nodes)
-            rpc::RpcClient::new(proxy_route.outbound_route.replace("ws", "http").clone());
-
-        match rpc_client
-            .send(cfg, rpc_payload, proxy_route.authorized)
-            .await
-        {
-            Ok(res) if res["result"] != Json::Null && res["result"] != "0x0" => {
-                // cache this address for 60 seconds
-                let _ = db.insert_cache(&signed_message.address, "", 60).await;
-
-                return Ok(());
-            }
-            Ok(res) if res["error"] != Json::Null => {
-                return Err(ProofOfFundingError::ErrorFromRpcCall);
-            }
-            Ok(_) => return Err(ProofOfFundingError::InsufficientBalance),
-            Err(e) => return Err(ProofOfFundingError::RpcCallFailed(e.to_string())),
-        };
-    }
-
-    Err(ProofOfFundingError::InvalidSignedMessage)
 }
