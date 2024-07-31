@@ -1,4 +1,5 @@
 use crate::ctx::{AppConfig, GenericResult, ProxyRoute};
+use crate::rpc::RpcPayload;
 use hyper::header;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Body, Request, Response, StatusCode, Uri};
@@ -6,12 +7,9 @@ use proxy_signature::ProxySign;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-mod moralis;
-use moralis::{proxy_moralis, validation_middleware_moralis};
-mod quicknode;
-pub(crate) use quicknode::{
-    proxy_quicknode, validation_middleware_quicknode, QuicknodePayload, QuicknodeSocketPayload,
-};
+
+pub(crate) mod http;
+pub(crate) mod websocket;
 
 const X_AUTH_PAYLOAD: &str = "X-Auth-Payload";
 const KEEP_ALIVE: &str = "keep-alive";
@@ -24,6 +22,7 @@ const KEEP_ALIVE: &str = "keep-alive";
 pub(crate) enum ProxyType {
     Quicknode,
     Moralis,
+    Cosmos,
 }
 
 /// Represents the types of payloads that can be processed by the proxy, with each variant tailored to a specific proxy type.
@@ -32,19 +31,25 @@ pub(crate) enum ProxyType {
 pub(crate) enum PayloadData {
     /// Quicknode feature requires body payload and Signed Message in X-Auth-Payload header
     Quicknode {
-        payload: QuicknodePayload,
-        signed_message: ProxySign,
+        payload: RpcPayload,
+        proxy_sign: ProxySign,
     },
     /// Moralis feature requires only Signed Message in X-Auth-Payload header and doesn't have body
     Moralis(ProxySign),
+    /// Cosmos feature requires body payload and Signed Message in X-Auth-Payload header
+    Cosmos {
+        payload: RpcPayload,
+        proxy_sign: ProxySign,
+    },
 }
 
 impl PayloadData {
     /// Returns a reference to the `ProxySign` contained within the payload.
-    pub(crate) fn signed_message(&self) -> &ProxySign {
+    pub(crate) fn proxy_sign(&self) -> &ProxySign {
         match self {
-            PayloadData::Quicknode { signed_message, .. } => signed_message,
-            PayloadData::Moralis(signed_message) => signed_message,
+            PayloadData::Quicknode { proxy_sign, .. } => proxy_sign,
+            PayloadData::Moralis(proxy_sign) => proxy_sign,
+            PayloadData::Cosmos { proxy_sign, .. } => proxy_sign,
         }
     }
 }
@@ -58,17 +63,24 @@ pub(crate) async fn generate_payload_from_req(
 ) -> GenericResult<(Request<Body>, PayloadData)> {
     match proxy_type {
         ProxyType::Quicknode => {
-            let (req, payload, signed_message) =
-                parse_body_and_auth_header::<QuicknodePayload>(req).await?;
+            let (req, payload, proxy_sign) = parse_body_and_auth_header::<RpcPayload>(req).await?;
             let payload_data = PayloadData::Quicknode {
                 payload,
-                signed_message,
+                proxy_sign,
             };
             Ok((req, payload_data))
         }
         ProxyType::Moralis => {
-            let (req, signed_message) = parse_auth_header(req).await?;
-            Ok((req, PayloadData::Moralis(signed_message)))
+            let (req, proxy_sign) = parse_auth_header(req).await?;
+            Ok((req, PayloadData::Moralis(proxy_sign)))
+        }
+        ProxyType::Cosmos => {
+            let (req, payload, proxy_sign) = parse_body_and_auth_header::<RpcPayload>(req).await?;
+            let payload_data = PayloadData::Cosmos {
+                payload,
+                proxy_sign,
+            };
+            Ok((req, payload_data))
         }
     }
 }
@@ -84,25 +96,40 @@ pub(crate) async fn proxy(
     match payload {
         PayloadData::Quicknode {
             payload,
-            signed_message,
+            proxy_sign,
         } => {
-            proxy_quicknode(
+            http::post::proxy(
                 cfg,
                 req,
                 remote_addr,
                 payload,
-                signed_message,
+                proxy_sign,
                 x_forwarded_for,
                 proxy_route,
             )
             .await
         }
-        PayloadData::Moralis(signed_message) => {
-            proxy_moralis(
+        PayloadData::Moralis(proxy_sign) => {
+            http::get::proxy(
                 cfg,
                 req,
                 remote_addr,
-                signed_message,
+                proxy_sign,
+                x_forwarded_for,
+                proxy_route,
+            )
+            .await
+        }
+        PayloadData::Cosmos {
+            payload,
+            proxy_sign,
+        } => {
+            http::post::proxy(
+                cfg,
+                req,
+                remote_addr,
+                payload,
+                proxy_sign,
                 x_forwarded_for,
                 proxy_route,
             )
@@ -119,12 +146,16 @@ pub(crate) async fn validation_middleware(
     remote_addr: &SocketAddr,
 ) -> Result<(), StatusCode> {
     match payload {
-        PayloadData::Quicknode { signed_message, .. } => {
-            validation_middleware_quicknode(cfg, signed_message, proxy_route, req_uri, remote_addr)
+        PayloadData::Quicknode { proxy_sign, .. } => {
+            http::post::validation_middleware(cfg, proxy_sign, proxy_route, req_uri, remote_addr)
                 .await
         }
-        PayloadData::Moralis(signed_message) => {
-            validation_middleware_moralis(cfg, signed_message, proxy_route, req_uri, remote_addr)
+        PayloadData::Moralis(proxy_sign) => {
+            http::get::validation_middleware(cfg, proxy_sign, proxy_route, req_uri, remote_addr)
+                .await
+        }
+        PayloadData::Cosmos { proxy_sign, .. } => {
+            http::post::validation_middleware(cfg, proxy_sign, proxy_route, req_uri, remote_addr)
                 .await
         }
     }
@@ -147,14 +178,20 @@ where
         .get(X_AUTH_PAYLOAD)
         .ok_or("Missing X-Auth-Payload header")?
         .to_str()?;
-    let signed_message: ProxySign = serde_json::from_str(header_value)?;
+    println!("HEADER VALUE {:?}", header_value);
+    let proxy_sign: ProxySign = serde_json::from_str(header_value)?;
+    println!("HEADER VALUE {:?}", header_value);
     let body_bytes = hyper::body::to_bytes(body).await?;
     if body_bytes.is_empty() {
         return Err("Empty body cannot be deserialized into non-optional type T".into());
     }
+    let payload: serde_json::Value = serde_json::from_slice(&body_bytes)?;
+    println!("AAAAAAAAAAA {:?}", payload);
     let payload: T = serde_json::from_slice(&body_bytes)?;
+    println!("AAAAAAAAAAAAAAAAAAAAAAAA");
     let new_req = Request::from_parts(parts, Body::from(body_bytes));
-    Ok((new_req, payload, signed_message))
+    println!("WOOOOOOOOOOOOOOO");
+    Ok((new_req, payload, proxy_sign))
 }
 
 /// Parses [ProxySign] value from X-Auth-Payload header

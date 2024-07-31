@@ -147,7 +147,7 @@ pub(crate) async fn http_handler(
         "{}",
         log_format!(
             remote_addr.ip(),
-            payload.signed_message().address,
+            payload.proxy_sign().address,
             req_uri,
             "Request and payload data received."
         )
@@ -160,7 +160,7 @@ pub(crate) async fn http_handler(
                 "{}",
                 log_format!(
                     remote_addr.ip(),
-                    payload.signed_message().address,
+                    payload.proxy_sign().address,
                     req_uri,
                     "Error type casting of IpAddr into HeaderValue, returning 500."
                 )

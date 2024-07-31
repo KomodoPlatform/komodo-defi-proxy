@@ -1,8 +1,12 @@
+#![allow(dead_code)] // We will need this module for KDF RPCs
+
 use bytes::Buf;
 use ctx::AppConfig;
 use http::{insert_jwt_to_http_header, APPLICATION_JSON};
 use hyper::{body::aggregate, header, Body, Request};
 use hyper_tls::HttpsConnector;
+use proxy_signature::ProxySign;
+use serde::{Deserialize, Serialize};
 use serde_json::from_reader;
 
 use super::*;
@@ -12,6 +16,47 @@ pub(crate) type Json = serde_json::Value;
 #[derive(Debug, PartialEq)]
 pub(crate) struct RpcClient {
     pub(crate) url: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(untagged)]
+pub(crate) enum Id {
+    String(String),
+    Number(usize),
+}
+
+/// Payload for JSON-RPC calls
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub(crate) struct RpcPayload {
+    pub(crate) method: String,
+    pub(crate) params: serde_json::value::Value,
+    pub(crate) id: Id,
+    pub(crate) jsonrpc: String,
+}
+
+/// Used for websocket connection.
+/// It combines standard JSON RPC method call fields (method, params, id, jsonrpc) with a `SignedMessage`
+/// for authentication and validation, facilitating secure and validated interactions with the Quicknode service.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub(crate) struct RpcSocketPayload {
+    pub(crate) method: String,
+    pub(crate) params: serde_json::value::Value,
+    pub(crate) id: Id,
+    pub(crate) jsonrpc: String,
+    pub(crate) proxy_sign: ProxySign,
+}
+
+impl RpcSocketPayload {
+    pub(crate) fn into_parts(self) -> (RpcPayload, ProxySign) {
+        let payload = RpcPayload {
+            method: self.method,
+            params: self.params,
+            id: self.id,
+            jsonrpc: self.jsonrpc,
+        };
+        let proxy_sign = self.proxy_sign;
+        (payload, proxy_sign)
+    }
 }
 
 impl RpcClient {

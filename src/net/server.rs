@@ -9,7 +9,7 @@ use super::{GenericError, GenericResult};
 use crate::ctx::{AppConfig, DEFAULT_PORT};
 use crate::http::{http_handler, response_by_status, X_FORWARDED_FOR};
 use crate::log_format;
-use crate::websocket::{should_upgrade_to_socket_conn, socket_handler};
+use crate::proxy::websocket::{should_upgrade_to_socket_conn, socket_handler};
 
 // TODO: replace this macro with a helper function.
 #[macro_export]

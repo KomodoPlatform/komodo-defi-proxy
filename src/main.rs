@@ -17,8 +17,6 @@ mod rate_limiter;
 mod rpc;
 #[path = "net/server.rs"]
 mod server;
-#[path = "net/websocket.rs"]
-mod websocket;
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[global_allocator]
