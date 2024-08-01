@@ -1,12 +1,10 @@
-use crate::address_status::{AddressStatus, AddressStatusOperations};
 use crate::ctx::{AppConfig, ProxyRoute};
-use crate::db::Db;
 use crate::http::{
     insert_jwt_to_http_header, response_by_status, APPLICATION_JSON, X_FORWARDED_FOR,
 };
+use crate::logger::tracked_log;
 use crate::proxy::remove_hop_by_hop_headers;
-use crate::rate_limiter::RateLimitOperations;
-use crate::{log_format, GenericResult};
+use crate::GenericResult;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{header, Body, Request, Response, StatusCode, Uri};
 use hyper_tls::HttpsConnector;
@@ -23,15 +21,15 @@ pub(crate) async fn proxy(
 ) -> GenericResult<Response<Body>> {
     if proxy_route.authorized {
         if let Err(e) = insert_jwt_to_http_header(cfg, req.headers_mut()).await {
-            log::error!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    signed_message.address,
-                    req.uri(),
+            tracked_log(
+                log::Level::Error,
+                remote_addr.ip(),
+                signed_message.address,
+                req.uri(),
+                format!(
                     "Error inserting JWT into HTTP header: {}, returning 500.",
                     e
-                )
+                ),
             );
             return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
         }
@@ -40,15 +38,12 @@ pub(crate) async fn proxy(
     let original_req_uri = req.uri().clone();
 
     if let Err(e) = modify_request_uri(&mut req, proxy_route) {
-        log::error!(
-            "{}",
-            log_format!(
-                remote_addr.ip(),
-                signed_message.address,
-                original_req_uri,
-                "Error modifying request base Uri: {}, returning 500.",
-                e
-            )
+        tracked_log(
+            log::Level::Error,
+            remote_addr.ip(),
+            signed_message.address,
+            original_req_uri,
+            format!("Error modifying request base Uri: {}, returning 500.", e),
         );
         return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
     }
@@ -67,16 +62,12 @@ pub(crate) async fn proxy(
     let res = match client.request(req).await {
         Ok(t) => t,
         Err(e) => {
-            log::warn!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    signed_message.address,
-                    original_req_uri,
-                    "Couldn't reach {}: {}. Returning 503.",
-                    target_uri,
-                    e
-                )
+            tracked_log(
+                log::Level::Warn,
+                remote_addr.ip(),
+                signed_message.address,
+                original_req_uri,
+                format!("Couldn't reach {}: {}. Returning 503.", target_uri, e),
             );
             return response_by_status(StatusCode::SERVICE_UNAVAILABLE);
         }

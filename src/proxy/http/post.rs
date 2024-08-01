@@ -2,9 +2,10 @@ use crate::ctx::{AppConfig, ProxyRoute};
 use crate::http::{
     insert_jwt_to_http_header, response_by_status, APPLICATION_JSON, X_FORWARDED_FOR,
 };
+use crate::logger::tracked_log;
 use crate::proxy::remove_hop_by_hop_headers;
 use crate::rpc::RpcPayload;
-use crate::{log_format, GenericResult};
+use crate::GenericResult;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{header, Body, Request, Response, StatusCode};
 use hyper_tls::HttpsConnector;
@@ -24,15 +25,12 @@ pub(crate) async fn proxy(
     if !proxy_route.allowed_rpc_methods.is_empty()
         && !proxy_route.allowed_rpc_methods.contains(&payload.method)
     {
-        log::warn!(
-            "{}",
-            log_format!(
-                remote_addr.ip(),
-                proxy_sign.address,
-                req.uri(),
-                "Method {} not allowed for, returning 403.",
-                payload.method
-            )
+        tracked_log(
+            log::Level::Warn,
+            remote_addr.ip(),
+            proxy_sign.address,
+            req.uri(),
+            format!("Method {} not allowed for, returning 403.", payload.method),
         );
         return response_by_status(StatusCode::FORBIDDEN);
     }
@@ -43,14 +41,12 @@ pub(crate) async fn proxy(
             .await
             .is_err()
         {
-            log::error!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    proxy_sign.address,
-                    req.uri(),
-                    "Error inserting JWT into http header, returning 500."
-                )
+            tracked_log(
+                log::Level::Error,
+                remote_addr.ip(),
+                proxy_sign.address,
+                req.uri(),
+                "Error inserting JWT into http header, returning 500.",
             );
             return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
         }
@@ -60,16 +56,15 @@ pub(crate) async fn proxy(
     *req.uri_mut() = match proxy_route.outbound_route.parse() {
         Ok(uri) => uri,
         Err(e) => {
-            log::error!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    proxy_sign.address,
-                    original_req_uri,
+            tracked_log(
+                log::Level::Error,
+                remote_addr.ip(),
+                proxy_sign.address,
+                original_req_uri,
+                format!(
                     "Error type casting value of {} into Uri: {}, returning 500.",
-                    proxy_route.outbound_route,
-                    e
-                )
+                    proxy_route.outbound_route, e
+                ),
             );
             return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
         }
@@ -89,16 +84,12 @@ pub(crate) async fn proxy(
     let res = match client.request(req).await {
         Ok(t) => t,
         Err(e) => {
-            log::warn!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    proxy_sign.address,
-                    original_req_uri,
-                    "Couldn't reach {}: {}. Returning 503.",
-                    target_uri,
-                    e
-                )
+            tracked_log(
+                log::Level::Warn,
+                remote_addr.ip(),
+                proxy_sign.address,
+                original_req_uri,
+                format!("Couldn't reach {}: {}. Returning 503.", target_uri, e),
             );
             return response_by_status(StatusCode::SERVICE_UNAVAILABLE);
         }

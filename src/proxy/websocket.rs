@@ -9,7 +9,8 @@ use tokio_tungstenite::{
 };
 
 use crate::{
-    ctx::AppConfig, http::response_by_status, log_format, rpc::RpcSocketPayload, GenericResult,
+    ctx::AppConfig, http::response_by_status, logger::tracked_log, rpc::RpcSocketPayload,
+    GenericResult,
 };
 
 pub(crate) fn should_upgrade_to_socket_conn(req: &Request<Body>) -> bool {
@@ -26,14 +27,12 @@ pub(crate) async fn socket_handler(
     let proxy_route = match cfg.get_proxy_route_by_inbound(&inbound_route) {
         Some(proxy_route) => proxy_route.clone(),
         None => {
-            log::warn!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    String::from("-"),
-                    req.uri(),
-                    "Proxy route not found for socket, returning 404."
-                )
+            tracked_log(
+                log::Level::Warn,
+                remote_addr.ip(),
+                "**not-available**",
+                req.uri(),
+                "Proxy route not found for socket, returning 404.",
             );
             return response_by_status(StatusCode::NOT_FOUND);
         }
@@ -47,14 +46,12 @@ pub(crate) async fn socket_handler(
             .await
             .is_err()
         {
-            log::error!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    String::from("-"),
-                    req.uri(),
-                    "Proxy route not found for socket"
-                )
+            tracked_log(
+                log::Level::Error,
+                remote_addr.ip(),
+                "**not-available**",
+                req.uri(),
+                "Proxy route not found for socket",
             );
 
             return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
@@ -83,28 +80,23 @@ pub(crate) async fn socket_handler(
                                     futures_util::select! {
                                         _ = keepalive_interval.tick().fuse() => {
                                             if let Err(e) = outbound_socket.send(Message::Ping(Vec::new())).await {
-                                                log::error!(
-                                                    "{}",
-                                                    log_format!(
-                                                        remote_addr.ip(),
-                                                        String::from("-"),
-                                                        req.uri(),
-                                                        "{:?}",
-                                                        e
-                                                    )
+                                                tracked_log(
+                                                    log::Level::Error,
+                                                    remote_addr.ip(),
+                                                    "**not-available**",
+                                                    req.uri(),
+                                                    e
                                                 );
+
                                             };
 
                                             if let Err(e) = inbound_socket.send(Message::Ping(Vec::new())).await {
-                                                log::error!(
-                                                    "{}",
-                                                    log_format!(
-                                                        remote_addr.ip(),
-                                                        String::from("-"),
-                                                        req.uri(),
-                                                        "{:?}",
-                                                        e
-                                                    )
+                                                tracked_log(
+                                                    log::Level::Error,
+                                                    remote_addr.ip(),
+                                                    "**not-available**",
+                                                    req.uri(),
+                                                    e
                                                 );
                                             }
                                         }
@@ -113,15 +105,12 @@ pub(crate) async fn socket_handler(
                                             match msg {
                                                 Some(Ok(msg)) => {
                                                     if let Err(e) = inbound_socket.send(msg).await {
-                                                        log::error!(
-                                                            "{}",
-                                                            log_format!(
-                                                                remote_addr.ip(),
-                                                                String::from("-"),
-                                                                req.uri(),
-                                                                "{:?}",
-                                                                e
-                                                            )
+                                                        tracked_log(
+                                                            log::Level::Error,
+                                                            remote_addr.ip(),
+                                                            "**not-available**",
+                                                            req.uri(),
+                                                            e
                                                         );
                                                     };
                                                 },
@@ -137,15 +126,12 @@ pub(crate) async fn socket_handler(
                                                              Ok(t) => t,
                                                              Err(e) => {
                                                                  if let Err(e) = inbound_socket.send(format!("Invalid payload. {e}").into()).await {
-                                                                     log::error!(
-                                                                         "{}",
-                                                                         log_format!(
-                                                                             remote_addr.ip(),
-                                                                             String::from("-"),
-                                                                             req.uri(),
-                                                                             "{:?}",
-                                                                             e
-                                                                         )
+                                                                     tracked_log(
+                                                                         log::Level::Error,
+                                                                         remote_addr.ip(),
+                                                                         "**not-available**",
+                                                                         req.uri(),
+                                                                         e
                                                                      );
                                                                  };
                                                                  continue;
@@ -155,15 +141,12 @@ pub(crate) async fn socket_handler(
 
                                                         if !proxy_route.allowed_rpc_methods.contains(&payload.method) {
                                                              if let Err(e) = inbound_socket.send("Method not allowed.".into()).await {
-                                                                 log::error!(
-                                                                     "{}",
-                                                                     log_format!(
-                                                                         remote_addr.ip(),
-                                                                         String::from("-"),
-                                                                         req.uri(),
-                                                                         "{:?}",
-                                                                         e
-                                                                     )
+                                                                 tracked_log(
+                                                                     log::Level::Error,
+                                                                     remote_addr.ip(),
+                                                                     "**not-available**",
+                                                                     req.uri(),
+                                                                     e
                                                                  );
                                                              };
                                                              continue;
@@ -188,44 +171,35 @@ pub(crate) async fn socket_handler(
                                                                  .to_string();
 
                                                                  if let Err(e) = outbound_socket.send(msg.into()).await {
-                                                                     log::error!(
-                                                                         "{}",
-                                                                         log_format!(
-                                                                             remote_addr.ip(),
-                                                                             String::from("-"),
-                                                                             req.uri(),
-                                                                             "{:?}",
-                                                                             e
-                                                                         )
+                                                                     tracked_log(
+                                                                         log::Level::Error,
+                                                                         remote_addr.ip(),
+                                                                         "**not-available**",
+                                                                         req.uri(),
+                                                                         e
                                                                      );
                                                                  };
 
                                                              },
                                                              Err(status_code) => {
                                                                  if let Err(e) = inbound_socket.send(format!("{status_code}").into()).await {
-                                                                     log::error!(
-                                                                         "{}",
-                                                                         log_format!(
-                                                                             remote_addr.ip(),
-                                                                             String::from("-"),
-                                                                             req.uri(),
-                                                                             "{:?}",
-                                                                             e
-                                                                         )
+                                                                     tracked_log(
+                                                                         log::Level::Error,
+                                                                         remote_addr.ip(),
+                                                                         "**not-available**",
+                                                                         req.uri(),
+                                                                         e
                                                                      );
                                                                  };
                                                              }
                                                         }
                                                     } else if let Err(e) = outbound_socket.send(msg).await {
-                                                        log::error!(
-                                                            "{}",
-                                                            log_format!(
-                                                                remote_addr.ip(),
-                                                                String::from("-"),
-                                                                req.uri(),
-                                                                "{:?}",
-                                                                e
-                                                            )
+                                                        tracked_log(
+                                                            log::Level::Error,
+                                                            remote_addr.ip(),
+                                                            "**not-available**",
+                                                            req.uri(),
+                                                            e
                                                         );
                                                     }
                                                 },
@@ -236,23 +210,23 @@ pub(crate) async fn socket_handler(
                                 }
                             }
                             e => {
-                                log::error!(
-                                    "{}",
-                                    log_format!(
-                                        remote_addr.ip(),
-                                        String::from("-"),
-                                        req.uri(),
-                                        "{:?}",
-                                        e
-                                    )
+                                tracked_log(
+                                    log::Level::Error,
+                                    remote_addr.ip(),
+                                    "**not-available**",
+                                    req.uri(),
+                                    format!("{e:?}"),
                                 );
                             }
                         };
                     }
                     Err(e) => {
-                        log::error!(
-                            "{}",
-                            log_format!(remote_addr.ip(), String::from("-"), req.uri(), "{}", e)
+                        tracked_log(
+                            log::Level::Error,
+                            remote_addr.ip(),
+                            "**not-available**",
+                            req.uri(),
+                            e,
                         );
                     }
                 }
@@ -261,9 +235,12 @@ pub(crate) async fn socket_handler(
             Ok(response)
         }
         Err(e) => {
-            log::error!(
-                "{}",
-                log_format!(remote_addr.ip(), String::from("-"), req.uri(), "{}", e)
+            tracked_log(
+                log::Level::Error,
+                remote_addr.ip(),
+                "**not-available**",
+                req.uri(),
+                e,
             );
             response_by_status(StatusCode::SERVICE_UNAVAILABLE)
         }

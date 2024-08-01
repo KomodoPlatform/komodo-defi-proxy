@@ -6,6 +6,7 @@ use server::serve;
 mod address_status;
 mod ctx;
 mod db;
+mod logger;
 #[path = "net/http.rs"]
 mod http;
 #[path = "security/jwt.rs"]

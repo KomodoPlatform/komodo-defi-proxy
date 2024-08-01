@@ -7,13 +7,14 @@ use crate::{
     address_status::{AddressStatus, AddressStatusOperations},
     ctx::{AppConfig, ProxyRoute},
     db::Db,
-    log_format,
+    logger::tracked_log,
     rate_limiter::RateLimitOperations,
 };
 
 pub(crate) mod get;
 pub(crate) mod post;
 
+// TODO: Query peers on KDF seeds
 pub(crate) async fn validation_middleware(
     cfg: &AppConfig,
     signed_message: &ProxySign,
@@ -28,14 +29,12 @@ pub(crate) async fn validation_middleware(
         AddressStatus::Blocked => Err(StatusCode::FORBIDDEN),
         AddressStatus::None => {
             if !signed_message.is_valid_message() {
-                log::warn!(
-                    "{}",
-                    log_format!(
-                        remote_addr.ip(),
-                        signed_message.address,
-                        req_uri,
-                        "Request has invalid signed message, returning 401"
-                    )
+                tracked_log(
+                    log::Level::Warn,
+                    remote_addr.ip(),
+                    &signed_message.address,
+                    req_uri,
+                    "Request has invalid signed message, returning 401",
                 );
 
                 return Err(StatusCode::UNAUTHORIZED);
@@ -51,45 +50,40 @@ pub(crate) async fn validation_middleware(
             match db.rate_exceeded(&rate_limiter_key, rate_limiter).await {
                 Ok(false) => {}
                 Ok(true) => {
-                    log::warn!(
-                        "{}",
-                        log_format!(
-                            remote_addr.ip(),
-                            signed_message.address,
-                            req_uri,
-                            "Rate exceed for {}, returning 406.",
-                            rate_limiter_key,
-                        )
+                    tracked_log(
+                        log::Level::Warn,
+                        remote_addr.ip(),
+                        &signed_message.address,
+                        req_uri,
+                        format!("Rate exceed for {}, returning 406.", rate_limiter_key),
                     );
                     return Err(StatusCode::NOT_ACCEPTABLE);
                 }
                 Err(e) => {
-                    log::error!(
-                        "{}",
-                        log_format!(
-                            remote_addr.ip(),
-                            signed_message.address,
-                            req_uri,
+                    tracked_log(
+                        log::Level::Error,
+                        remote_addr.ip(),
+                        &signed_message.address,
+                        req_uri,
+                        format!(
                             "Rate exceeded check failed for node '{}': {}, returning 500.",
-                            signed_message.address,
-                            e
-                        )
+                            signed_message.address, e
+                        ),
                     );
                     return Err(StatusCode::INTERNAL_SERVER_ERROR);
                 }
             }
 
             if let Err(e) = db.rate_address(rate_limiter_key).await {
-                log::error!(
-                    "{}",
-                    log_format!(
-                        remote_addr.ip(),
-                        signed_message.address,
-                        req_uri,
+                tracked_log(
+                    log::Level::Error,
+                    remote_addr.ip(),
+                    &signed_message.address,
+                    req_uri,
+                    format!(
                         "Rate incrementing failed for node '{}': {}, returning 500.",
-                        signed_message.address,
-                        e
-                    )
+                        signed_message.address, e
+                    ),
                 );
                 return Err(StatusCode::INTERNAL_SERVER_ERROR);
             };

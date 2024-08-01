@@ -1,4 +1,5 @@
 use super::*;
+use crate::logger::tracked_log;
 use crate::proxy::{generate_payload_from_req, proxy, validation_middleware};
 use crate::server::is_private_ip;
 use address_status::{get_address_status_list, post_address_status};
@@ -71,14 +72,12 @@ pub(crate) async fn http_handler(
     let is_private_ip = is_private_ip(&remote_addr.ip());
 
     if is_private_ip {
-        log::info!(
-            "{}",
-            log_format!(
-                remote_addr.ip(),
-                String::from("-"),
-                req.uri(),
-                "Request received from the same network. Security middlewares will be by-passed."
-            )
+        tracked_log(
+            log::Level::Info,
+            remote_addr.ip(),
+            "**not-available**",
+            req.uri(),
+            "Request received from the same network. Security middlewares will be by-passed.",
         );
 
         match (req.method(), req_uri.path()) {
@@ -97,29 +96,26 @@ pub(crate) async fn http_handler(
         &Method::GET => match cfg.get_proxy_route_by_uri(req.uri_mut()) {
             Some(proxy_route) => proxy_route,
             None => {
-                log::warn!(
-                    "{}",
-                    log_format!(
-                        remote_addr.ip(),
-                        String::from("-"),
-                        req_uri,
-                        "Proxy route not found for GET request, returning 404."
-                    )
+                tracked_log(
+                    log::Level::Warn,
+                    remote_addr.ip(),
+                    "**not-available**",
+                    req_uri,
+                    "Proxy route not found for GET request, returning 404.",
                 );
+
                 return response_by_status(StatusCode::NOT_FOUND);
             }
         },
         _ => match cfg.get_proxy_route_by_inbound(req.uri().path()) {
             Some(proxy_route) => proxy_route,
             None => {
-                log::warn!(
-                    "{}",
-                    log_format!(
-                        remote_addr.ip(),
-                        String::from("-"),
-                        req_uri,
-                        "Proxy route not found for non-GET request, returning 404."
-                    )
+                tracked_log(
+                    log::Level::Warn,
+                    remote_addr.ip(),
+                    "**not-available**",
+                    req_uri,
+                    "Proxy route not found for non-GET request, returning 404.",
                 );
                 return response_by_status(StatusCode::NOT_FOUND);
             }
@@ -129,41 +125,34 @@ pub(crate) async fn http_handler(
     let (req, payload) = match generate_payload_from_req(req, &proxy_route.proxy_type).await {
         Ok(t) => t,
         Err(e) => {
-            log::warn!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    String::from("-"),
-                    req_uri,
-                    "Received invalid http payload: {}, returning 401.",
-                    e
-                )
+            tracked_log(
+                log::Level::Warn,
+                remote_addr.ip(),
+                "**not-available**",
+                req_uri,
+                format!("Received invalid http payload: {e}, returning 401."),
             );
             return response_by_status(StatusCode::UNAUTHORIZED);
         }
     };
 
-    log::info!(
-        "{}",
-        log_format!(
-            remote_addr.ip(),
-            payload.proxy_sign().address,
-            req_uri,
-            "Request and payload data received."
-        )
+    tracked_log(
+        log::Level::Info,
+        remote_addr.ip(),
+        &payload.proxy_sign().address,
+        &req_uri,
+        "Request and payload data received.",
     );
 
     let x_forwarded_for: HeaderValue = match remote_addr.ip().to_string().parse() {
         Ok(t) => t,
         Err(_) => {
-            log::error!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    payload.proxy_sign().address,
-                    req_uri,
-                    "Error type casting of IpAddr into HeaderValue, returning 500."
-                )
+            tracked_log(
+                log::Level::Error,
+                remote_addr.ip(),
+                &payload.proxy_sign().address,
+                &req_uri,
+                "Error type casting of IpAddr into HeaderValue, returning 500.",
             );
             return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
         }
@@ -197,4 +186,3 @@ pub(crate) async fn http_handler(
     )
     .await
 }
-
