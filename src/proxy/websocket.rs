@@ -169,7 +169,7 @@ pub(crate) async fn socket_handler(
                                                              continue;
                                                         }
 
-                                                        match crate::proxy::http::post::validation_middleware(
+                                                        match crate::proxy::http::validation_middleware(
                                                             &cfg,
                                                             &signed_message,
                                                             &proxy_route,

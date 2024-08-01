@@ -145,20 +145,8 @@ pub(crate) async fn validation_middleware(
     req_uri: &Uri,
     remote_addr: &SocketAddr,
 ) -> Result<(), StatusCode> {
-    match payload {
-        PayloadData::Quicknode { proxy_sign, .. } => {
-            http::post::validation_middleware(cfg, proxy_sign, proxy_route, req_uri, remote_addr)
-                .await
-        }
-        PayloadData::Moralis(proxy_sign) => {
-            http::get::validation_middleware(cfg, proxy_sign, proxy_route, req_uri, remote_addr)
-                .await
-        }
-        PayloadData::Cosmos { proxy_sign, .. } => {
-            http::post::validation_middleware(cfg, proxy_sign, proxy_route, req_uri, remote_addr)
-                .await
-        }
-    }
+    let proxy_sign = payload.proxy_sign();
+    http::validation_middleware(cfg, proxy_sign, proxy_route, req_uri, remote_addr).await
 }
 
 /// Parses the request body and the `X-Auth-Payload` header into a payload and signed message.
