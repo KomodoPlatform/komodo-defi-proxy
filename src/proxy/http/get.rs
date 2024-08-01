@@ -78,7 +78,10 @@ pub(crate) async fn proxy(
 
 /// This function removes the matched inbound route from the request URI and
 /// replaces request base URI with the outbound route specified in the proxy route.
-fn modify_request_uri(req: &mut Request<Body>, proxy_route: &ProxyRoute) -> GenericResult<()> {
+pub(crate) fn modify_request_uri(
+    req: &mut Request<Body>,
+    proxy_route: &ProxyRoute,
+) -> GenericResult<()> {
     let proxy_base_uri = proxy_route.outbound_route.parse::<Uri>()?;
     let original_uri = req.uri();
 
