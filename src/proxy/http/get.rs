@@ -104,31 +104,40 @@ fn modify_request_uri(req: &mut Request<Body>, proxy_route: &ProxyRoute) -> Gene
 
 #[cfg(test)]
 mod tests {
+    use crate::proxy::X_AUTH_PAYLOAD;
+
     use super::*;
     use hyper::header::HeaderName;
     use hyper::Method;
+    use libp2p::identity;
+    use proxy_signature::RawMessage;
+
+    fn generate_ed25519_keypair(mut p2p_key: [u8; 32]) -> identity::Keypair {
+        let secret = identity::ed25519::SecretKey::try_from_bytes(&mut p2p_key)
+            .expect("Secret length is 32 bytes");
+        let keypair = identity::ed25519::Keypair::from(secret);
+        identity::Keypair::from(keypair)
+    }
 
     #[tokio::test]
-    async fn test_parse_payload() {
-        let serialized_payload = serde_json::json!({
-            "coin_ticker": "BTC",
-            "address": "dummy-value",
-            "timestamp_message": 1655320000,
-            "signature": "dummy-value",
-        })
-        .to_string();
+    async fn sign_serialize_and_send() {
+        let keypair = generate_ed25519_keypair([0; 32]);
+        let proxy_sign =
+            RawMessage::sign(&keypair, &Uri::from_static("http://example.com"), 0, 5).unwrap();
+        let serialized_proxy_sign = serde_json::to_string(&proxy_sign).unwrap();
 
         let req = Request::builder()
             .method(Method::GET)
             .header(header::ACCEPT, HeaderValue::from_static(APPLICATION_JSON))
             .header(
                 crate::proxy::X_AUTH_PAYLOAD,
-                HeaderValue::from_str(&serialized_payload).unwrap(),
+                HeaderValue::from_str(&serialized_proxy_sign).unwrap(),
             )
             .body(Body::empty())
             .unwrap();
 
-        let (mut req, payload) = crate::proxy::parse_auth_header(req).await.unwrap();
+        let (mut req, deserialized_proxy_sign) =
+            crate::proxy::parse_auth_header(req).await.unwrap();
 
         let body_bytes = hyper::body::to_bytes(req.body_mut()).await.unwrap();
         assert!(
@@ -136,23 +145,14 @@ mod tests {
             "Body should be empty for GET methods"
         );
 
-        let header_value = req.headers().get(header::ACCEPT).unwrap();
+        assert_eq!(deserialized_proxy_sign, proxy_sign);
+        assert!(deserialized_proxy_sign.is_valid_message());
 
-        // let expected_payload = SignedMessage {
-        //     coin_ticker: String::from("BTC"),
-        //     address: String::from("dummy-value"),
-        //     timestamp_message: 1655320000,
-        //     signature: String::from("dummy-value"),
-        // };
-
-        // assert_eq!(payload, expected_payload);
-        // assert_eq!(header_value, APPLICATION_JSON);
-
-        // let additional_headers = &[
-        //     header::CONTENT_LENGTH,
-        //     HeaderName::from_bytes(X_AUTH_PAYLOAD.as_bytes()).unwrap(),
-        // ];
-        // remove_hop_by_hop_headers(&mut req, additional_headers).unwrap();
+        let additional_headers = &[
+            header::CONTENT_LENGTH,
+            HeaderName::from_bytes(X_AUTH_PAYLOAD.as_bytes()).unwrap(),
+        ];
+        remove_hop_by_hop_headers(&mut req, additional_headers).unwrap();
     }
 
     #[tokio::test]

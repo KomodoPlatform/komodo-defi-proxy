@@ -1062,6 +1062,7 @@ dependencies = [
  "hyper-tls",
  "jemallocator",
  "jsonwebtoken",
+ "libp2p",
  "log",
  "once_cell",
  "proxy_signature",
