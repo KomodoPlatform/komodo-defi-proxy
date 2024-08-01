@@ -36,3 +36,21 @@ jemallocator = "0.5.0"
 
 [dev-dependencies]
 hex = "0.4.3"
+
+[profile.release]
+debug = 0
+debug-assertions = false
+opt-level = 3
+strip = true
+codegen-units = 1
+lto = true
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = 1
+debug-assertions = false
+panic = 'unwind'
+incremental = true
+codegen-units = 256
+
