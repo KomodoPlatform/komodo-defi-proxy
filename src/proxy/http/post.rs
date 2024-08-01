@@ -1,9 +1,9 @@
 use crate::ctx::{AppConfig, ProxyRoute};
-use crate::http::{
-    insert_jwt_to_http_header, response_by_status, APPLICATION_JSON, X_FORWARDED_FOR,
-};
 use crate::logger::tracked_log;
-use crate::proxy::remove_hop_by_hop_headers;
+use crate::proxy::{
+    insert_jwt_to_http_header, remove_hop_by_hop_headers, response_by_status, APPLICATION_JSON,
+    X_FORWARDED_FOR,
+};
 use crate::rpc::RpcPayload;
 use crate::GenericResult;
 use hyper::header::{HeaderName, HeaderValue};

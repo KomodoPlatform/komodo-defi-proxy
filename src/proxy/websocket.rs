@@ -8,10 +8,9 @@ use tokio_tungstenite::{
     WebSocketStream,
 };
 
-use crate::{
-    ctx::AppConfig, http::response_by_status, logger::tracked_log, rpc::RpcSocketPayload,
-    GenericResult,
-};
+use crate::{ctx::AppConfig, logger::tracked_log, rpc::RpcSocketPayload, GenericResult};
+
+use super::{insert_jwt_to_http_header, response_by_status};
 
 pub(crate) fn should_upgrade_to_socket_conn(req: &Request<Body>) -> bool {
     let expected = HeaderValue::from_static("websocket");
@@ -42,7 +41,7 @@ pub(crate) async fn socket_handler(
 
     if proxy_route.authorized {
         // modify outgoing request
-        if crate::http::insert_jwt_to_http_header(&cfg, outbound_req.headers_mut())
+        if insert_jwt_to_http_header(&cfg, outbound_req.headers_mut())
             .await
             .is_err()
         {

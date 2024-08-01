@@ -97,7 +97,7 @@ pub(crate) async fn validation_middleware(
 mod tests {
     use hyper::StatusCode;
 
-    use crate::{ctx, http::response_by_status};
+    use crate::{ctx, proxy::response_by_status};
 
     #[test]
     fn test_get_proxy_route_by_inbound() {

@@ -1,9 +1,9 @@
 use crate::ctx::{AppConfig, ProxyRoute};
-use crate::http::{
-    insert_jwt_to_http_header, response_by_status, APPLICATION_JSON, X_FORWARDED_FOR,
-};
 use crate::logger::tracked_log;
-use crate::proxy::remove_hop_by_hop_headers;
+use crate::proxy::{
+    insert_jwt_to_http_header, remove_hop_by_hop_headers, response_by_status, APPLICATION_JSON,
+    X_FORWARDED_FOR,
+};
 use crate::GenericResult;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{header, Body, Request, Response, StatusCode, Uri};
@@ -105,12 +105,11 @@ fn modify_request_uri(req: &mut Request<Body>, proxy_route: &ProxyRoute) -> Gene
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hyper::header::HeaderName;
+    use hyper::Method;
 
     #[tokio::test]
     async fn test_parse_payload() {
-        // use hyper::header::HeaderName;
-        use hyper::Method;
-
         let serialized_payload = serde_json::json!({
             "coin_ticker": "BTC",
             "address": "dummy-value",

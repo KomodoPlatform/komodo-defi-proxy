@@ -2,10 +2,11 @@ use async_trait::async_trait;
 use bytes::Buf;
 use ctx::AppConfig;
 use db::Db;
-use http::APPLICATION_JSON;
 use hyper::{header, Body, Request, Response, StatusCode};
 use redis::FromRedisValue;
 use serde::{Deserialize, Serialize};
+
+use crate::proxy::APPLICATION_JSON;
 
 use super::*;
 

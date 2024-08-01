@@ -2,12 +2,13 @@
 
 use bytes::Buf;
 use ctx::AppConfig;
-use http::{insert_jwt_to_http_header, APPLICATION_JSON};
 use hyper::{body::aggregate, header, Body, Request};
 use hyper_tls::HttpsConnector;
 use proxy_signature::ProxySign;
 use serde::{Deserialize, Serialize};
 use serde_json::from_reader;
+
+use crate::proxy::{insert_jwt_to_http_header, APPLICATION_JSON};
 
 use super::*;
 
