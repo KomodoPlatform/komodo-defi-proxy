@@ -174,19 +174,14 @@ where
         .get(X_AUTH_PAYLOAD)
         .ok_or("Missing X-Auth-Payload header")?
         .to_str()?;
-    println!("HEADER VALUE {:?}", header_value);
     let proxy_sign: ProxySign = serde_json::from_str(header_value)?;
-    println!("HEADER VALUE {:?}", header_value);
     let body_bytes = hyper::body::to_bytes(body).await?;
     if body_bytes.is_empty() {
         return Err("Empty body cannot be deserialized into non-optional type T".into());
     }
     let payload: serde_json::Value = serde_json::from_slice(&body_bytes)?;
-    println!("AAAAAAAAAAA {:?}", payload);
     let payload: T = serde_json::from_slice(&body_bytes)?;
-    println!("AAAAAAAAAAAAAAAAAAAAAAAA");
     let new_req = Request::from_parts(parts, Body::from(body_bytes));
-    println!("WOOOOOOOOOOOOOOO");
     Ok((new_req, payload, proxy_sign))
 }
 
