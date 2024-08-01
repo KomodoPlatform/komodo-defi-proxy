@@ -1404,6 +1404,7 @@ dependencies = [
 [[package]]
 name = "proxy_signature"
 version = "0.1.0"
+source = "git+https://github.com/KomodoPlatform/komodo-defi-framework?rev=9ebc006#9ebc0065350c735d5ba209f634f48a9e24063243"
 dependencies = [
  "chrono",
  "http",

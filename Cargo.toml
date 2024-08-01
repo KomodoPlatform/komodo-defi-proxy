@@ -27,9 +27,8 @@ simple_logger = "2.1.0"
 tokio = { version = "1.12.0", default-features = false, features = ["macros", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = { version = "0.20.0", features = ["native-tls"] }
 # From our sources
-# proxy_signature = { git = "https://github.com/KomodoPlatform/komodo-defi-framework", rev = "0784f1a" }
 libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.4", default-features = false, features = ["identify"] }
-proxy_signature = { path = "/home/nimda/devspace/KomodoPlatform/komodo-defi-framework/mm2src/proxy_signature" }
+proxy_signature = { git = "https://github.com/KomodoPlatform/komodo-defi-framework", rev = "9ebc006" }
 
 [target.x86_64-unknown-linux-gnu.dependencies]
 jemallocator = "0.5.0"
