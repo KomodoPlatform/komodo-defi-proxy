@@ -30,7 +30,7 @@ const KEEP_ALIVE: &str = "keep-alive";
 pub(crate) enum ProxyType {
     Quicknode,
     Moralis,
-    Cosmos,
+    BlockPi,
 }
 
 /// Represents the types of payloads that can be processed by the proxy, with each variant tailored to a specific proxy type.
@@ -44,8 +44,8 @@ pub(crate) enum PayloadData {
     },
     /// Moralis feature requires only Signed Message in X-Auth-Payload header and doesn't have body
     Moralis(ProxySign),
-    /// Cosmos feature requires body payload and Signed Message in X-Auth-Payload header
-    Cosmos {
+    /// BlockPi feature requires body payload and Signed Message in X-Auth-Payload header
+    BlockPi {
         payload: RpcPayload,
         proxy_sign: ProxySign,
     },
@@ -57,7 +57,7 @@ impl PayloadData {
         match self {
             PayloadData::Quicknode { proxy_sign, .. } => proxy_sign,
             PayloadData::Moralis(proxy_sign) => proxy_sign,
-            PayloadData::Cosmos { proxy_sign, .. } => proxy_sign,
+            PayloadData::BlockPi { proxy_sign, .. } => proxy_sign,
         }
     }
 }
@@ -82,9 +82,9 @@ pub(crate) async fn generate_payload_from_req(
             let (req, proxy_sign) = parse_auth_header(req).await?;
             Ok((req, PayloadData::Moralis(proxy_sign)))
         }
-        ProxyType::Cosmos => {
+        ProxyType::BlockPi => {
             let (req, payload, proxy_sign) = parse_body_and_auth_header::<RpcPayload>(req).await?;
-            let payload_data = PayloadData::Cosmos {
+            let payload_data = PayloadData::BlockPi {
                 payload,
                 proxy_sign,
             };
@@ -128,7 +128,7 @@ pub(crate) async fn proxy(
             )
             .await
         }
-        PayloadData::Cosmos {
+        PayloadData::BlockPi {
             payload,
             proxy_sign,
         } => {
@@ -179,7 +179,6 @@ where
     if body_bytes.is_empty() {
         return Err("Empty body cannot be deserialized into non-optional type T".into());
     }
-    let payload: serde_json::Value = serde_json::from_slice(&body_bytes)?;
     let payload: T = serde_json::from_slice(&body_bytes)?;
     let new_req = Request::from_parts(parts, Body::from(body_bytes));
     Ok((new_req, payload, proxy_sign))
