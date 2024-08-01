@@ -1,4 +1,4 @@
-#![allow(dead_code)] // We will need this module for KDF RPCs
+#![allow(dead_code)] // TODO: remove this
 
 use bytes::Buf;
 use ctx::AppConfig;
@@ -123,4 +123,45 @@ async fn test_send() {
     let res = rpc_client.send(&cfg, payload, false).await.unwrap();
 
     assert_eq!(res, expected_res);
+}
+
+#[test]
+fn payload_serialzation_and_deserialization() {
+    let json_payload = serde_json::json!({
+        "method": "dummy-value",
+        "params": [],
+        "id": 1,
+        "jsonrpc": "2.0"
+    });
+
+    let actual_payload: RpcPayload = serde_json::from_str(&json_payload.to_string()).unwrap();
+
+    let expected_payload = RpcPayload {
+        method: String::from("dummy-value"),
+        params: serde_json::json!([]),
+        id: Id::Number(1),
+        jsonrpc: String::from("2.0"),
+    };
+
+    assert_eq!(actual_payload, expected_payload);
+
+    // Backwards
+    let json = serde_json::to_value(expected_payload).unwrap();
+    assert_eq!(json_payload, json);
+    assert_eq!(json_payload.to_string(), json.to_string());
+}
+
+#[test]
+fn string_id_serialzation_and_deserialization() {
+    let json_payload = serde_json::json!({
+        "method": "dummy-value",
+        "params": [],
+        "id": "string-id-123",
+        "jsonrpc": "2.0"
+    });
+
+    let deserialized: RpcPayload = serde_json::from_str(&json_payload.to_string()).unwrap();
+    let expected_id = Id::String("string-id-123".into());
+
+    assert_eq!(deserialized.id, expected_id);
 }
