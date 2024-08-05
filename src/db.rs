@@ -36,6 +36,7 @@ impl Db {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn key_exists(&mut self, key: &str) -> GenericResult<bool> {
         Ok(redis::cmd("EXISTS")
             .arg(key)
@@ -43,6 +44,7 @@ impl Db {
             .await?)
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn insert_cache(
         &mut self,
         key: &str,

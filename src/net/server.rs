@@ -7,15 +7,9 @@ use hyper::{Body, Request, Response, Server, StatusCode};
 
 use super::{GenericError, GenericResult};
 use crate::ctx::{AppConfig, DEFAULT_PORT};
-use crate::http::{http_handler, response_by_status, X_FORWARDED_FOR};
-use crate::log_format;
-use crate::websocket::{should_upgrade_to_socket_conn, socket_handler};
-
-#[macro_export]
-macro_rules! log_format {
-  ($ip: expr, $address: expr, $path: expr, $format: expr, $($args: tt)+) => {format!(concat!("[Ip: {} | Address: {} | Path: {}] ", $format), $ip, $address, $path, $($args)+)};
-  ($ip: expr, $address: expr, $path: expr, $format: expr) => {format!(concat!("[Ip: {} | Address: {} | Path: {}] ", $format), $ip, $address, $path)}
-}
+use crate::logger::tracked_log;
+use crate::proxy::websocket::{should_upgrade_to_socket_conn, socket_handler};
+use crate::proxy::{http_handler, response_by_status, X_FORWARDED_FOR};
 
 pub(crate) fn is_private_ip(ip: &IpAddr) -> bool {
     match ip {
@@ -49,15 +43,14 @@ async fn connection_handler(
     let remote_addr = match get_real_address(&req, &remote_addr) {
         Ok(t) => t,
         _ => {
-            log::error!(
-                "{}",
-                log_format!(
-                    remote_addr.ip(),
-                    String::from("-"),
-                    req.uri(),
-                    "Reading real remote address failed, returning 500."
-                )
+            tracked_log(
+                log::Level::Error,
+                remote_addr.ip(),
+                "**not-available**",
+                req.uri(),
+                "Reading real remote address failed, returning 500.",
             );
+
             return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
