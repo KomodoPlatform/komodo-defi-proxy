@@ -138,7 +138,8 @@ pub(crate) async fn socket_handler(
                                                          };
                                                         let (payload, signed_message) = socket_payload.into_parts();
 
-                                                        if !proxy_route.allowed_rpc_methods.contains(&payload.method) {
+                                                        if !proxy_route.allowed_rpc_methods.is_empty() &&
+                                                            !proxy_route.allowed_rpc_methods.contains(&payload.method) {
                                                              if let Err(e) = inbound_socket.send("Method not allowed.".into()).await {
                                                                  tracked_log(
                                                                      log::Level::Error,
