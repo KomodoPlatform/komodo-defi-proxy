@@ -8,6 +8,7 @@ use crate::{
     ctx::{AppConfig, ProxyRoute},
     db::Db,
     expirable_map::ExpirableMap,
+    kdf::peer_connection_healthcheck_rpc,
     logger::tracked_log,
     rate_limiter::RateLimitOperations,
 };
@@ -36,16 +37,7 @@ pub(crate) async fn validation_middleware(
     let is_known = know_peers.get(&signed_message.address).is_some();
 
     if !is_known {
-        let payload = serde_json::json!({
-            "userpass": cfg.kdf_rpc_password,
-            "method": "peer_connection_healthcheck",
-            "mmrpc": "2.0",
-            "params": {
-                "peer_id": signed_message.address
-            }
-        });
-
-        match cfg.kdf_rpc_client.send(cfg, payload, false).await {
+        match peer_connection_healthcheck_rpc(cfg, &signed_message.address).await {
             Ok(response) => {
                 if response["result"] == serde_json::json!(true) {
                     know_peers.insert(signed_message.address.clone(), (), KNOW_PEER_EXPIRATION);
