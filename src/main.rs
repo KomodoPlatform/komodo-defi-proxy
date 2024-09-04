@@ -1,6 +1,6 @@
 use ctx::get_app_config;
 use db::get_redis_connection;
-use kdf::version_rpc;
+use kdf_rpc_interface::version_rpc;
 use server::serve;
 
 #[path = "security/address_status.rs"]
@@ -10,8 +10,8 @@ mod db;
 mod expirable_map;
 #[path = "security/jwt.rs"]
 mod jwt;
-#[path = "net/kdf.rs"]
-mod kdf;
+#[path = "net/kdf_rpc_interface.rs"]
+mod kdf_rpc_interface;
 mod logger;
 mod proxy;
 #[path = "security/rate_limiter.rs"]

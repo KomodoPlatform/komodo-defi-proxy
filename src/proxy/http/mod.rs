@@ -8,7 +8,7 @@ use crate::{
     ctx::{AppConfig, ProxyRoute},
     db::Db,
     expirable_map::ExpirableMap,
-    kdf::peer_connection_healthcheck_rpc,
+    kdf_rpc_interface::peer_connection_healthcheck_rpc,
     logger::tracked_log,
     rate_limiter::RateLimitOperations,
 };
