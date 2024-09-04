@@ -1,7 +1,7 @@
 {
   "port": 6150,
   "redis_connection_string": "redis://redis:6379",
-  "kdf_connection_string": "http://127.0.0.1:7783",
+  "kdf_rpc_client": "http://127.0.0.1:7783",
   "pubkey_path": "/usr/src/komodo-defi-proxy/assets/.pubkey_test",
   "privkey_path": "/usr/src/komodo-defi-proxy/assets/.privkey_test",
   "token_expiration_time": 300,

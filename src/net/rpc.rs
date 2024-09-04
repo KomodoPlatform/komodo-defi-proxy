@@ -1,5 +1,3 @@
-#![allow(dead_code)] // TODO: remove this
-
 use bytes::Buf;
 use ctx::AppConfig;
 use hyper::{body::aggregate, header, Body, Request};
@@ -12,9 +10,7 @@ use crate::proxy::{insert_jwt_to_http_header, APPLICATION_JSON};
 
 use super::*;
 
-pub(crate) type Json = serde_json::Value;
-
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct RpcClient {
     pub(crate) url: String,
 }
@@ -30,7 +26,7 @@ pub(crate) enum Id {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub(crate) struct RpcPayload {
     pub(crate) method: String,
-    pub(crate) params: serde_json::value::Value,
+    pub(crate) params: serde_json::Value,
     pub(crate) id: Id,
     pub(crate) jsonrpc: String,
 }
@@ -41,7 +37,7 @@ pub(crate) struct RpcPayload {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub(crate) struct RpcSocketPayload {
     pub(crate) method: String,
-    pub(crate) params: serde_json::value::Value,
+    pub(crate) params: serde_json::Value,
     pub(crate) id: Id,
     pub(crate) jsonrpc: String,
     pub(crate) proxy_sign: ProxySign,
@@ -68,9 +64,9 @@ impl RpcClient {
     pub(crate) async fn send(
         &self,
         cfg: &AppConfig,
-        payload: Json,
+        payload: serde_json::Value,
         is_authorized: bool,
-    ) -> GenericResult<Json> {
+    ) -> GenericResult<serde_json::Value> {
         let mut req = Request::post(&self.url).body(Body::from(payload.to_string()))?;
         req.headers_mut()
             .append(header::CONTENT_TYPE, APPLICATION_JSON.parse()?);
