@@ -45,6 +45,8 @@ pub(crate) struct AppConfig {
         deserialize_with = "deserialize_rpc_client"
     )]
     pub(crate) kdf_rpc_client: RpcClient,
+    /// `rpc_userpass` which is required for kdf RPCs.
+    pub(crate) kdf_rpc_password: String,
     /// File path to the public key used for user verification and authentication.
     pub(crate) pubkey_path: String,
     /// File path to the private key used for user verification and authentication.
@@ -130,6 +132,7 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
         port: Some(6150),
         redis_connection_string: String::from("redis://redis:6379"),
         kdf_rpc_client: RpcClient::new("http://127.0.0.1:7783".into()),
+        kdf_rpc_password: String::from("testpass"),
         pubkey_path: String::from("/usr/src/komodo-defi-proxy/assets/.pubkey_test"),
         privkey_path: String::from("/usr/src/komodo-defi-proxy/assets/.privkey_test"),
         token_expiration_time: Some(300),
@@ -209,6 +212,7 @@ fn test_app_config_serialzation_and_deserialization() {
         "port": 6150,
         "redis_connection_string": "redis://redis:6379",
         "kdf_rpc_client": "http://127.0.0.1:7783",
+        "kdf_rpc_password": "testpass",
         "pubkey_path": "/usr/src/komodo-defi-proxy/assets/.pubkey_test",
         "privkey_path": "/usr/src/komodo-defi-proxy/assets/.privkey_test",
         "token_expiration_time": 300,

@@ -1,12 +1,13 @@
-use std::net::SocketAddr;
-
 use hyper::{StatusCode, Uri};
 use proxy_signature::ProxySign;
+use std::{net::SocketAddr, sync::LazyLock, time::Duration};
+use tokio::sync::Mutex;
 
 use crate::{
     address_status::{AddressStatus, AddressStatusOperations},
     ctx::{AppConfig, ProxyRoute},
     db::Db,
+    expirable_map::ExpirableMap,
     logger::tracked_log,
     rate_limiter::RateLimitOperations,
 };
@@ -14,7 +15,6 @@ use crate::{
 pub(crate) mod get;
 pub(crate) mod post;
 
-// TODO: Query peers on KDF seeds
 pub(crate) async fn validation_middleware(
     cfg: &AppConfig,
     signed_message: &ProxySign,
@@ -23,6 +23,61 @@ pub(crate) async fn validation_middleware(
     remote_addr: &SocketAddr,
 ) -> Result<(), StatusCode> {
     let mut db = Db::create_instance(cfg).await;
+
+    // Once we know a peer is connected to the KDF network, we can assume they are connected
+    // for 10 seconds without asking again.
+    const KNOW_PEER_EXPIRATION: Duration = Duration::from_secs(10);
+    static KNOWN_PEERS: LazyLock<Mutex<ExpirableMap<String, ()>>> =
+        LazyLock::new(|| Mutex::new(ExpirableMap::new()));
+
+    let mut know_peers = KNOWN_PEERS.lock().await;
+
+    know_peers.clear_expired_entries();
+    let is_known = know_peers.get(&signed_message.address).is_some();
+
+    if !is_known {
+        let payload = serde_json::json!({
+            "userpass": cfg.kdf_rpc_password,
+            "method": "peer_connection_healthcheck",
+            "mmrpc": "2.0",
+            "params": {
+                "peer_id": signed_message.address
+            }
+        });
+
+        match cfg.kdf_rpc_client.send(cfg, payload, false).await {
+            Ok(response) => {
+                if response["result"] == serde_json::json!(true) {
+                    know_peers.insert(signed_message.address.clone(), (), KNOW_PEER_EXPIRATION);
+                } else {
+                    tracked_log(
+                        log::Level::Warn,
+                        remote_addr.ip(),
+                        &signed_message.address,
+                        req_uri,
+                        "Peer isn't connected to KDF network, returning 401",
+                    );
+
+                    return Err(StatusCode::UNAUTHORIZED);
+                }
+            }
+            Err(error) => {
+                tracked_log(
+                    log::Level::Error,
+                    remote_addr.ip(),
+                    &signed_message.address,
+                    req_uri,
+                    format!(
+                        "`peer_connection_healthcheck` RPC failed, returning 500. Error: {}",
+                        error
+                    ),
+                );
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    }
+
+    drop(know_peers);
 
     match db.read_address_status(&signed_message.address).await {
         AddressStatus::Trusted => Ok(()),
