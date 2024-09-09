@@ -46,9 +46,9 @@ Expose configuration file's path as an environment variable in `AUTH_APP_CONFIG_
 
 ***Important Note:*** The environment where the application will be deployed, the timezone MUST be as UTC. Also, make sure redis is version `7.*`
 
-### Architecture (TODO: OUTDATED)
+### Architecture
 
-![arch2](https://github.com/KomodoPlatform/komodo-defi-proxy/assets/39852038/be7fe7ae-2f2a-4f68-afa8-ce4938c570a7)
+![2024-09-09_14-09](https://github.com/user-attachments/assets/2775d73e-8003-4bfe-89e1-2c64da9e3004)
 
 1) Client sends the request.
 
