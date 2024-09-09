@@ -16,10 +16,12 @@ pub struct ExpirableEntry<V> {
 }
 
 impl<V> ExpirableEntry<V> {
+    #[allow(dead_code)]
     pub fn get_element(&self) -> &V {
         &self.value
     }
 
+    #[allow(dead_code)]
     pub fn update_expiration(&mut self, expires_at: Instant) {
         self.expires_at = expires_at
     }
@@ -74,6 +76,7 @@ impl<K: Eq + Hash, V> ExpirableMap<K, V> {
 
     /// Removes a key-value pair from the map and returns the associated value if present.
     #[inline]
+    #[allow(dead_code)]
     pub fn remove(&mut self, k: &K) -> Option<V> {
         self.0.remove(k).map(|v| v.value)
     }
