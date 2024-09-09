@@ -25,56 +25,12 @@ pub(crate) async fn validation_middleware(
 ) -> Result<(), StatusCode> {
     let mut db = Db::create_instance(cfg).await;
 
-    // Once we know a peer is connected to the KDF network, we can assume they are connected
-    // for 10 seconds without asking again.
-    const KNOW_PEER_EXPIRATION: Duration = Duration::from_secs(10);
-    static KNOWN_PEERS: LazyLock<Mutex<ExpirableMap<String, ()>>> =
-        LazyLock::new(|| Mutex::new(ExpirableMap::new()));
-
-    let mut know_peers = KNOWN_PEERS.lock().await;
-
-    know_peers.clear_expired_entries();
-    let is_known = know_peers.get(&signed_message.address).is_some();
-
-    if !is_known {
-        match peer_connection_healthcheck_rpc(cfg, &signed_message.address).await {
-            Ok(response) => {
-                if response["result"] == serde_json::json!(true) {
-                    know_peers.insert(signed_message.address.clone(), (), KNOW_PEER_EXPIRATION);
-                } else {
-                    tracked_log(
-                        log::Level::Warn,
-                        remote_addr.ip(),
-                        &signed_message.address,
-                        req_uri,
-                        "Peer isn't connected to KDF network, returning 401",
-                    );
-
-                    return Err(StatusCode::UNAUTHORIZED);
-                }
-            }
-            Err(error) => {
-                tracked_log(
-                    log::Level::Error,
-                    remote_addr.ip(),
-                    &signed_message.address,
-                    req_uri,
-                    format!(
-                        "`peer_connection_healthcheck` RPC failed, returning 500. Error: {}",
-                        error
-                    ),
-                );
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-        }
-    }
-
-    drop(know_peers);
-
     match db.read_address_status(&signed_message.address).await {
         AddressStatus::Trusted => Ok(()),
         AddressStatus::Blocked => Err(StatusCode::FORBIDDEN),
         AddressStatus::None => {
+            peer_connection_healthcheck(cfg, signed_message, req_uri, remote_addr).await?;
+
             if !signed_message.is_valid_message() {
                 tracked_log(
                     log::Level::Warn,
@@ -138,6 +94,59 @@ pub(crate) async fn validation_middleware(
             Ok(())
         }
     }
+}
+
+async fn peer_connection_healthcheck(
+    cfg: &AppConfig,
+    signed_message: &ProxySign,
+    req_uri: &Uri,
+    remote_addr: &SocketAddr,
+) -> Result<(), StatusCode> {
+    // Once we know a peer is connected to the KDF network, we can assume they are connected
+    // for 10 seconds without asking again.
+    const KNOW_PEER_EXPIRATION: Duration = Duration::from_secs(10);
+    static KNOWN_PEERS: LazyLock<Mutex<ExpirableMap<String, ()>>> =
+        LazyLock::new(|| Mutex::new(ExpirableMap::new()));
+
+    let mut know_peers = KNOWN_PEERS.lock().await;
+
+    know_peers.clear_expired_entries();
+    let is_known = know_peers.get(&signed_message.address).is_some();
+
+    if !is_known {
+        match peer_connection_healthcheck_rpc(cfg, &signed_message.address).await {
+            Ok(response) => {
+                if response["result"] == serde_json::json!(true) {
+                    know_peers.insert(signed_message.address.clone(), (), KNOW_PEER_EXPIRATION);
+                } else {
+                    tracked_log(
+                        log::Level::Warn,
+                        remote_addr.ip(),
+                        &signed_message.address,
+                        req_uri,
+                        "Peer isn't connected to KDF network, returning 401",
+                    );
+
+                    return Err(StatusCode::UNAUTHORIZED);
+                }
+            }
+            Err(error) => {
+                tracked_log(
+                    log::Level::Error,
+                    remote_addr.ip(),
+                    &signed_message.address,
+                    req_uri,
+                    format!(
+                        "`peer_connection_healthcheck` RPC failed, returning 500. Error: {}",
+                        error
+                    ),
+                );
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
