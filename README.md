@@ -16,12 +16,14 @@ Create the configuration file for app runtime.
   "pubkey_path": "/path_to_publick_key.pem",
   "privkey_path": "/path_to_private_key.pem",
   "redis_connection_string": "redis://localhost",
+  "kdf_rpc_client": "http://127.0.0.1:7783",
+  "kdf_rpc_password": "testpass",
   "token_expiration_time": 300,
   "proxy_routes": [
     {
       "inbound_route": "/dev",
       "outbound_route": "http://localhost:8000",
-      "proxy_type": "quicknode",
+      "proxy_type": "quicknode", # available types are: "quicknode", "moralis", "block_pi"
       "authorized": false,
       "allowed_rpc_methods": [
         "eth_blockNumber",
@@ -42,14 +44,11 @@ Create the configuration file for app runtime.
 
 Expose configuration file's path as an environment variable in `AUTH_APP_CONFIG_PATH`.
 
-***Important Note:*** The environment where the application will be deployed, the timezone MUST be as UTC. Also, make sure redis is version `6.*`
+***Important Note:*** The environment where the application will be deployed, the timezone MUST be as UTC. Also, make sure redis is version `7.*`
 
 ### Architecture (TODO: OUTDATED)
 
 ![arch2](https://github.com/KomodoPlatform/komodo-defi-proxy/assets/39852038/be7fe7ae-2f2a-4f68-afa8-ce4938c570a7)
-
-
-**Execution flow (TODO: OUTDATED):**
 
 1) Client sends the request.
 
@@ -58,29 +57,17 @@ Expose configuration file's path as an environment variable in `AUTH_APP_CONFIG_
 3) If the incoming request comes from the same network, step 4 will be by-passed.
 
 4) Request Handling in the Middleware:
+  - **Status Checker**:
+    - **Blocked**: Return `403 Forbidden`.
+    - **Allowed**: Process continues with the rate limiter.
+    - **Trusted**: Bypass rate limiter and proof of funding.
 
-   **For Quicknode:**
-   - **Status Checker**:
-     - **Blocked**: Return `403 Forbidden` immediately.
-     - **Allowed**: Process continues with the rate limiter.
-     - **Trusted**: Bypass rate limiter and proof of funding.
+  - **Peer Status Checker**:
+    - The requesting peer must be active in the KDF network. Validate this by executing the `peer_connection_healthcheck` KDF RPC. If the peer is not connected to the network, return `401 Unauthorized`.
 
-   - **Rate Limiter**:
-     - First, verify the signed message. If not valid, return `401 Unauthorized` immediately.
-     - If valid, calculate the request count with the time interval specified in the application configuration. If the wallet address has sent too many requests than the expected amount, process continues with the proof of funding. If not, bypass the proof of funding.
-
-   - **Proof of Funding**:
-     - Return `406 Not Acceptable` if the wallet has a 0 balance. Otherwise, assume the request is valid and process it as usual.
-
-   **For Moralis:**
-   - **Status Checker**:
-     - **Blocked**: Return `403 Forbidden` immediately.
-     - **Allowed**: Process continues with the rate limiter.
-     - **Trusted**: Bypass the rate limiter.
-
-   - **Rate Limiter**:
-     - First, verify the signed message. If not valid, return `401 Unauthorized` immediately.
-     - If valid, calculate the request count with the time interval specified in the application configuration. If the wallet address has sent too many requests, return an error `406 Not Acceptable` indicating that the wallet address must wait for some time before making more requests.
+  - **Rate Limiter**:
+    - First, verify the signed message. If not valid, return `401 Unauthorized`.
+    - If valid, calculate the request count with the time interval specified in the application configuration. If the wallet address has sent too many requests than the expected amount, process continues with the proof of funding. If not, bypass the proof of funding.
 
 5) Find target route by requested endpoint.
 
@@ -102,7 +89,7 @@ curl -v --url "'$mm2_address'" -s --data '{
 	"params": {
 		"ticker": "ETH",
 		"nodes": [
-			{"url": "'$atomicdex_gui_auth_address'", "gui_auth": true }
+			{"url": "'$atomicdex_gui_auth_address'", "komodo_proxy": true }
 		],
 		"swap_contract_address": "0x24ABE4c71FC658C91313b6552cd40cD808b3Ea80",
 		"erc20_tokens_requests": [
