@@ -36,11 +36,11 @@ pub(crate) struct RpcPayload {
 /// for authentication and validation, facilitating secure and validated interactions with the Quicknode service.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub(crate) struct RpcSocketPayload {
-    pub(crate) method: String,
-    pub(crate) params: serde_json::Value,
-    pub(crate) id: Id,
-    pub(crate) jsonrpc: String,
-    pub(crate) proxy_sign: ProxySign,
+    method: String,
+    params: serde_json::Value,
+    id: Id,
+    jsonrpc: String,
+    proxy_sign: ProxySign,
 }
 
 impl RpcSocketPayload {
