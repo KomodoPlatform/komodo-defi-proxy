@@ -44,7 +44,7 @@ Create the configuration file for app runtime.
 
 Expose configuration file's path as an environment variable in `AUTH_APP_CONFIG_PATH`.
 
-***Important Note:*** The environment where the application will be deployed, the timezone MUST be as UTC. Also, make sure redis is version `7.*`
+***Important Note:*** Make sure redis is version `7.*`
 
 ### Architecture
 
