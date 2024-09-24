@@ -1,3 +1,7 @@
+# Komodo Defi Proxy
+
+Decentralized P2P applications have some limitations by their nature and one of them is the use application/API keys. If an API key is used in the application, any user could retrieve it by simply debugging the app. Some of the blockchain services we use in [komodo-defi-framework](https://github.com/KomodoPlatform/komodo-defi-framework) are paid services and we want to prevent abuse, such as users copying the API key for personal use. To address this problem, we created this project, komodo-defi-proxy. It takes the request, handles the API key, forwards the request to the actual service, and returns the result without modifying the original request. This keeps our secret application keys secure and hidden from end users.
+
 ### Dev Requirements
 
 Creating rsa key pairs
