@@ -42,7 +42,8 @@ Create the configuration file for app runtime.
     "rp_15_min": 200,
     "rp_30_min": 350,
     "rp_60_min": 575
-  }
+  },
+  "peer_healthcheck_caching_secs": 10
 }
 ```
 
