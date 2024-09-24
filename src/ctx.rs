@@ -9,6 +9,11 @@ pub(crate) use super::*;
 
 const DEFAULT_TOKEN_EXPIRATION_TIME: i64 = 3600;
 pub(crate) const DEFAULT_PORT: u16 = 5000;
+
+const fn default_peer_caching_secs() -> u64 {
+    10
+}
+
 static CONFIG: OnceCell<AppConfig> = OnceCell::new();
 
 pub(crate) fn get_app_config() -> &'static AppConfig {
@@ -58,6 +63,13 @@ pub(crate) struct AppConfig {
     pub(crate) proxy_routes: Vec<ProxyRoute>,
     /// The default rate limiting rules for maintaining the frequency of incoming traffic for per client.
     pub(crate) rate_limiter: RateLimiter,
+    /// The number of seconds to cache a known peer.
+    ///
+    /// When a peer is identified as connected with `peer_connection_healthcheck` RPC,
+    /// this value determines how long to cache that peer as known-peer to avoid
+    /// sending repeated `peer_connection_healthcheck` requests for every proxy request.
+    #[serde(default = "default_peer_caching_secs")]
+    pub(crate) peer_healthcheck_caching_secs: u64,
 }
 
 /// Defines a routing rule for proxying requests from an inbound route to an outbound URL
@@ -203,6 +215,7 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
             rp_30_min: 555,
             rp_60_min: 555,
         },
+        peer_healthcheck_caching_secs: 10,
     }
 }
 
@@ -282,7 +295,8 @@ fn test_app_config_serialzation_and_deserialization() {
             "rp_15_min": 555,
             "rp_30_min": 555,
             "rp_60_min": 555
-        }
+        },
+        "peer_healthcheck_caching_secs": 10,
     });
 
     let actual_config: AppConfig = serde_json::from_str(&json_config.to_string()).unwrap();

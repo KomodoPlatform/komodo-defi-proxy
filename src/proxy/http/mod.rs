@@ -104,7 +104,8 @@ async fn peer_connection_healthcheck(
 ) -> Result<(), StatusCode> {
     // Once we know a peer is connected to the KDF network, we can assume they are connected
     // for 10 seconds without asking again.
-    const KNOW_PEER_EXPIRATION: Duration = Duration::from_secs(10);
+    let know_peer_expiration = Duration::from_secs(cfg.peer_healthcheck_caching_secs);
+
     static KNOWN_PEERS: LazyLock<Mutex<ExpirableMap<String, ()>>> =
         LazyLock::new(|| Mutex::new(ExpirableMap::new()));
 
@@ -117,7 +118,7 @@ async fn peer_connection_healthcheck(
         match peer_connection_healthcheck_rpc(cfg, &signed_message.address).await {
             Ok(response) => {
                 if response["result"] == serde_json::json!(true) {
-                    know_peers.insert(signed_message.address.clone(), (), KNOW_PEER_EXPIRATION);
+                    know_peers.insert(signed_message.address.clone(), (), know_peer_expiration);
                 } else {
                     tracked_log(
                         log::Level::Warn,
