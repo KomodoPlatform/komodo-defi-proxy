@@ -1,6 +1,7 @@
 use hyper::{StatusCode, Uri};
+use libp2p::PeerId;
 use proxy_signature::ProxySign;
-use std::{net::SocketAddr, sync::LazyLock, time::Duration};
+use std::{net::SocketAddr, str::FromStr, sync::LazyLock, time::Duration};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -108,19 +109,32 @@ async fn peer_connection_healthcheck(
     // for 10 seconds without asking again.
     let know_peer_expiration = Duration::from_secs(cfg.peer_healthcheck_caching_secs);
 
-    static KNOWN_PEERS: LazyLock<Mutex<ExpirableMap<String, ()>>> =
+    static KNOWN_PEERS: LazyLock<Mutex<ExpirableMap<PeerId, ()>>> =
         LazyLock::new(|| Mutex::new(ExpirableMap::new()));
 
     let mut know_peers = KNOWN_PEERS.lock().await;
 
-    know_peers.clear_expired_entries();
-    let is_known = know_peers.get(&signed_message.address).is_some();
+    let Ok(peer_id) = PeerId::from_str(&signed_message.address) else {
+        tracked_log(
+            log::Level::Warn,
+            remote_addr.ip(),
+            &signed_message.address,
+            req_uri,
+            format!(
+                "Peer id '{}' isn't valid, returning 401",
+                signed_message.address
+            ),
+        );
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let is_known = know_peers.get(&peer_id).is_some();
 
     if !is_known {
         match peer_connection_healthcheck_rpc(cfg, &signed_message.address).await {
             Ok(response) => {
                 if response["result"] == serde_json::json!(true) {
-                    know_peers.insert(signed_message.address.clone(), (), know_peer_expiration);
+                    know_peers.insert(peer_id, (), know_peer_expiration);
                 } else {
                     tracked_log(
                         log::Level::Warn,
