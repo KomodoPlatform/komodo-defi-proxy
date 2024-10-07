@@ -16,6 +16,8 @@ use crate::{
 pub(crate) mod get;
 pub(crate) mod post;
 
+const MAX_SIGNATURE_EXP_SECS: u64 = 15;
+
 pub(crate) async fn validation_middleware(
     cfg: &AppConfig,
     signed_message: &ProxySign,
@@ -31,7 +33,7 @@ pub(crate) async fn validation_middleware(
         AddressStatus::None => {
             peer_connection_healthcheck(cfg, signed_message, req_uri, remote_addr).await?;
 
-            if !signed_message.is_valid_message() {
+            if !signed_message.is_valid_message(MAX_SIGNATURE_EXP_SECS) {
                 tracked_log(
                     log::Level::Warn,
                     remote_addr.ip(),
@@ -258,7 +260,7 @@ mod tests {
         );
 
         assert_eq!(deserialized_proxy_sign, proxy_sign);
-        assert!(deserialized_proxy_sign.is_valid_message());
+        assert!(deserialized_proxy_sign.is_valid_message(MAX_SIGNATURE_EXP_SECS));
 
         let additional_headers = &[
             header::CONTENT_LENGTH,
