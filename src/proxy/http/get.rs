@@ -149,7 +149,9 @@ mod tests {
         );
 
         assert_eq!(deserialized_proxy_sign, proxy_sign);
-        assert!(deserialized_proxy_sign.is_valid_message());
+        assert!(
+            deserialized_proxy_sign.is_valid_message(crate::proxy::http::MAX_SIGNATURE_EXP_SECS)
+        );
 
         let additional_headers = &[
             header::CONTENT_LENGTH,

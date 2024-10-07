@@ -1067,6 +1067,7 @@ dependencies = [
  "once_cell",
  "proxy_signature",
  "redis",
+ "rustc-hash",
  "serde",
  "serde_json",
  "sha3",
@@ -1404,7 +1405,7 @@ dependencies = [
 [[package]]
 name = "proxy_signature"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/komodo-defi-framework?rev=9ebc006#9ebc0065350c735d5ba209f634f48a9e24063243"
+source = "git+https://github.com/KomodoPlatform/komodo-defi-framework?branch=dev#e65fefe5adfdff6e3d1fb0d31b65e5ef78b2e437"
 dependencies = [
  "chrono",
  "http",
@@ -1570,6 +1571,12 @@ dependencies = [
  "web-sys",
  "winapi",
 ]
+
+[[package]]
+name = "rustc-hash"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustc-hex"

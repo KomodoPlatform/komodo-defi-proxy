@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        rust: [nightly, beta, stable]
+        rust: [beta, stable]
     steps:
       - uses: actions/checkout@v2
 
@@ -35,7 +35,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        rust: [nightly, beta, stable]
+        rust: [beta, stable]
     steps:
       - uses: actions/checkout@v2
 
@@ -58,7 +58,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        rust: [nightly, beta, stable]
+        rust: [beta, stable]
     steps:
       - uses: actions/checkout@v2
 
@@ -82,7 +82,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        rust: [nightly, beta, stable]
+        rust: [beta, stable]
     steps:
       - uses: actions/checkout@v2
 
@@ -103,7 +103,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        rust: [nightly, beta, stable]
+        rust: [beta, stable]
     steps:
       - uses: actions/checkout@v2
 

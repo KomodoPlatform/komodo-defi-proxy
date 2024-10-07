@@ -1,19 +1,40 @@
 use hyper::Uri;
 use once_cell::sync::OnceCell;
 use proxy::ProxyType;
-use serde::{Deserialize, Serialize};
+use rpc::RpcClient;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::env;
 
 pub(crate) use super::*;
 
 const DEFAULT_TOKEN_EXPIRATION_TIME: i64 = 3600;
 pub(crate) const DEFAULT_PORT: u16 = 5000;
+
+const fn default_peer_caching_secs() -> u64 {
+    10
+}
+
 static CONFIG: OnceCell<AppConfig> = OnceCell::new();
 
 pub(crate) fn get_app_config() -> &'static AppConfig {
     CONFIG.get_or_init(|| {
         AppConfig::from_fs().expect("Error reading application configuration from fs.")
     })
+}
+
+fn deserialize_rpc_client<'de, D>(deserializer: D) -> Result<RpcClient, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let connection_string = String::deserialize(deserializer)?;
+    Ok(RpcClient::new(connection_string))
+}
+
+fn serialize_rpc_client<S>(v: &RpcClient, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&v.url)
 }
 
 /// Configuration settings for the application, loaded typically from a JSON configuration file.
@@ -23,6 +44,14 @@ pub(crate) struct AppConfig {
     pub(crate) port: Option<u16>,
     /// Redis database connection string.
     pub(crate) redis_connection_string: String,
+    /// RPC client for komodo-defi-framework.
+    #[serde(
+        serialize_with = "serialize_rpc_client",
+        deserialize_with = "deserialize_rpc_client"
+    )]
+    pub(crate) kdf_rpc_client: RpcClient,
+    /// `rpc_userpass` which is required for kdf RPCs.
+    pub(crate) kdf_rpc_password: String,
     /// File path to the public key used for user verification and authentication.
     pub(crate) pubkey_path: String,
     /// File path to the private key used for user verification and authentication.
@@ -34,6 +63,13 @@ pub(crate) struct AppConfig {
     pub(crate) proxy_routes: Vec<ProxyRoute>,
     /// The default rate limiting rules for maintaining the frequency of incoming traffic for per client.
     pub(crate) rate_limiter: RateLimiter,
+    /// The number of seconds to cache a known peer.
+    ///
+    /// When a peer is identified as connected with `peer_connection_healthcheck` RPC,
+    /// this value determines how long to cache that peer as known-peer to avoid
+    /// sending repeated `peer_connection_healthcheck` requests for every proxy request.
+    #[serde(default = "default_peer_caching_secs")]
+    pub(crate) peer_healthcheck_caching_secs: u64,
 }
 
 /// Defines a routing rule for proxying requests from an inbound route to an outbound URL
@@ -107,6 +143,8 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
     AppConfig {
         port: Some(6150),
         redis_connection_string: String::from("redis://redis:6379"),
+        kdf_rpc_client: RpcClient::new("http://127.0.0.1:7783".into()),
+        kdf_rpc_password: String::from("testpass"),
         pubkey_path: String::from("/usr/src/komodo-defi-proxy/assets/.pubkey_test"),
         privkey_path: String::from("/usr/src/komodo-defi-proxy/assets/.privkey_test"),
         token_expiration_time: Some(300),
@@ -177,6 +215,7 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
             rp_30_min: 555,
             rp_60_min: 555,
         },
+        peer_healthcheck_caching_secs: 10,
     }
 }
 
@@ -185,6 +224,8 @@ fn test_app_config_serialzation_and_deserialization() {
     let json_config = serde_json::json!({
         "port": 6150,
         "redis_connection_string": "redis://redis:6379",
+        "kdf_rpc_client": "http://127.0.0.1:7783",
+        "kdf_rpc_password": "testpass",
         "pubkey_path": "/usr/src/komodo-defi-proxy/assets/.pubkey_test",
         "privkey_path": "/usr/src/komodo-defi-proxy/assets/.privkey_test",
         "token_expiration_time": 300,
@@ -254,7 +295,8 @@ fn test_app_config_serialzation_and_deserialization() {
             "rp_15_min": 555,
             "rp_30_min": 555,
             "rp_60_min": 555
-        }
+        },
+        "peer_healthcheck_caching_secs": 10,
     });
 
     let actual_config: AppConfig = serde_json::from_str(&json_config.to_string()).unwrap();

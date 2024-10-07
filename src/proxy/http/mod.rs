@@ -1,12 +1,15 @@
-use std::net::SocketAddr;
-
 use hyper::{StatusCode, Uri};
+use libp2p::PeerId;
 use proxy_signature::ProxySign;
+use std::{net::SocketAddr, str::FromStr, sync::LazyLock, time::Duration};
+use tokio::sync::Mutex;
 
 use crate::{
     address_status::{AddressStatus, AddressStatusOperations},
     ctx::{AppConfig, ProxyRoute},
     db::Db,
+    expirable_map::ExpirableMap,
+    kdf_rpc_interface::peer_connection_healthcheck_rpc,
     logger::tracked_log,
     rate_limiter::RateLimitOperations,
 };
@@ -14,7 +17,8 @@ use crate::{
 pub(crate) mod get;
 pub(crate) mod post;
 
-// TODO: Query peers on KDF seeds
+const MAX_SIGNATURE_EXP_SECS: u64 = 15;
+
 pub(crate) async fn validation_middleware(
     cfg: &AppConfig,
     signed_message: &ProxySign,
@@ -28,7 +32,9 @@ pub(crate) async fn validation_middleware(
         AddressStatus::Trusted => Ok(()),
         AddressStatus::Blocked => Err(StatusCode::FORBIDDEN),
         AddressStatus::None => {
-            if !signed_message.is_valid_message() {
+            peer_connection_healthcheck(cfg, signed_message, req_uri, remote_addr).await?;
+
+            if !signed_message.is_valid_message(MAX_SIGNATURE_EXP_SECS) {
                 tracked_log(
                     log::Level::Warn,
                     remote_addr.ip(),
@@ -91,6 +97,73 @@ pub(crate) async fn validation_middleware(
             Ok(())
         }
     }
+}
+
+async fn peer_connection_healthcheck(
+    cfg: &AppConfig,
+    signed_message: &ProxySign,
+    req_uri: &Uri,
+    remote_addr: &SocketAddr,
+) -> Result<(), StatusCode> {
+    // Once we know a peer is connected to the KDF network, we can assume they are connected
+    // for 10 seconds without asking again.
+    let know_peer_expiration = Duration::from_secs(cfg.peer_healthcheck_caching_secs);
+
+    static KNOWN_PEERS: LazyLock<Mutex<ExpirableMap<PeerId, ()>>> =
+        LazyLock::new(|| Mutex::new(ExpirableMap::new()));
+
+    let mut know_peers = KNOWN_PEERS.lock().await;
+
+    let Ok(peer_id) = PeerId::from_str(&signed_message.address) else {
+        tracked_log(
+            log::Level::Warn,
+            remote_addr.ip(),
+            &signed_message.address,
+            req_uri,
+            format!(
+                "Peer id '{}' isn't valid, returning 401",
+                signed_message.address
+            ),
+        );
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let is_known = know_peers.get(&peer_id).is_some();
+
+    if !is_known {
+        match peer_connection_healthcheck_rpc(cfg, &signed_message.address).await {
+            Ok(response) => {
+                if response["result"] == serde_json::json!(true) {
+                    know_peers.insert(peer_id, (), know_peer_expiration);
+                } else {
+                    tracked_log(
+                        log::Level::Warn,
+                        remote_addr.ip(),
+                        &signed_message.address,
+                        req_uri,
+                        "Peer isn't connected to KDF network, returning 401",
+                    );
+
+                    return Err(StatusCode::UNAUTHORIZED);
+                }
+            }
+            Err(error) => {
+                tracked_log(
+                    log::Level::Error,
+                    remote_addr.ip(),
+                    &signed_message.address,
+                    req_uri,
+                    format!(
+                        "`peer_connection_healthcheck` RPC failed, returning 500. Error: {}",
+                        error
+                    ),
+                );
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -201,7 +274,7 @@ mod tests {
         );
 
         assert_eq!(deserialized_proxy_sign, proxy_sign);
-        assert!(deserialized_proxy_sign.is_valid_message());
+        assert!(deserialized_proxy_sign.is_valid_message(MAX_SIGNATURE_EXP_SECS));
 
         let additional_headers = &[
             header::CONTENT_LENGTH,

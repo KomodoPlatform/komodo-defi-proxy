@@ -1,13 +1,17 @@
 use ctx::get_app_config;
 use db::get_redis_connection;
+use kdf_rpc_interface::version_rpc;
 use server::serve;
 
 #[path = "security/address_status.rs"]
 mod address_status;
 mod ctx;
 mod db;
+mod expirable_map;
 #[path = "security/jwt.rs"]
 mod jwt;
+#[path = "net/kdf_rpc_interface.rs"]
+mod kdf_rpc_interface;
 mod logger;
 mod proxy;
 #[path = "security/rate_limiter.rs"]
@@ -36,6 +40,8 @@ async fn main() -> GenericResult<()> {
     let cfg = get_app_config();
     // to panic if redis is not available
     get_redis_connection(cfg).await;
+
+    version_rpc(cfg).await.expect("KDF is not available.");
 
     serve(cfg).await
 }
