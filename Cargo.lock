@@ -1072,6 +1072,7 @@ dependencies = [
  "serde_json",
  "sha3",
  "simple_logger",
+ "timed-map",
  "tokio",
  "tokio-tungstenite",
  "url",
@@ -1877,6 +1878,12 @@ name = "time-macros"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42657b1a6f4d817cda8e7a0ace261fe0cc946cf3a80314390b22cc61ae080792"
+
+[[package]]
+name = "timed-map"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "589dc3ef6288d2afc0d355d82cc34b1894bfc85844c4d69b6607d4862181ded1"
 
 [[package]]
 name = "tiny-keccak"

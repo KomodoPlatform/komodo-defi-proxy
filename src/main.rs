@@ -7,7 +7,6 @@ use server::serve;
 mod address_status;
 mod ctx;
 mod db;
-mod expirable_map;
 #[path = "security/jwt.rs"]
 mod jwt;
 #[path = "net/kdf_rpc_interface.rs"]

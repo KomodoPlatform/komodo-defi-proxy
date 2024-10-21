@@ -2,13 +2,13 @@ use hyper::{StatusCode, Uri};
 use libp2p::PeerId;
 use proxy_signature::ProxySign;
 use std::{net::SocketAddr, str::FromStr, sync::LazyLock, time::Duration};
+use timed_map::{StdClock, TimedMap};
 use tokio::sync::Mutex;
 
 use crate::{
     address_status::{AddressStatus, AddressStatusOperations},
     ctx::{AppConfig, ProxyRoute},
     db::Db,
-    expirable_map::ExpirableMap,
     kdf_rpc_interface::peer_connection_healthcheck_rpc,
     logger::tracked_log,
     rate_limiter::RateLimitOperations,
@@ -109,8 +109,8 @@ async fn peer_connection_healthcheck(
     // for 10 seconds without asking again.
     let know_peer_expiration = Duration::from_secs(cfg.peer_healthcheck_caching_secs);
 
-    static KNOWN_PEERS: LazyLock<Mutex<ExpirableMap<PeerId, ()>>> =
-        LazyLock::new(|| Mutex::new(ExpirableMap::new()));
+    static KNOWN_PEERS: LazyLock<Mutex<TimedMap<StdClock, PeerId, ()>>> =
+        LazyLock::new(|| Mutex::new(TimedMap::new()));
 
     let mut know_peers = KNOWN_PEERS.lock().await;
 
@@ -134,7 +134,7 @@ async fn peer_connection_healthcheck(
         match peer_connection_healthcheck_rpc(cfg, &signed_message.address).await {
             Ok(response) => {
                 if response["result"] == serde_json::json!(true) {
-                    know_peers.insert(peer_id, (), know_peer_expiration);
+                    know_peers.insert_expirable(peer_id, (), know_peer_expiration);
                 } else {
                     tracked_log(
                         log::Level::Warn,
