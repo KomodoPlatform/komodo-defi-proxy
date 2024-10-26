@@ -2,7 +2,7 @@ use hyper::{StatusCode, Uri};
 use libp2p::PeerId;
 use proxy_signature::ProxySign;
 use std::{net::SocketAddr, str::FromStr, sync::LazyLock, time::Duration};
-use timed_map::{StdClock, TimedMap};
+use timed_map::{MapKind, StdClock, TimedMap};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -109,8 +109,9 @@ async fn peer_connection_healthcheck(
     // for 10 seconds without asking again.
     let know_peer_expiration = Duration::from_secs(cfg.peer_healthcheck_caching_secs);
 
-    static KNOWN_PEERS: LazyLock<Mutex<TimedMap<StdClock, PeerId, ()>>> =
-        LazyLock::new(|| Mutex::new(TimedMap::new()));
+    static KNOWN_PEERS: LazyLock<Mutex<TimedMap<StdClock, PeerId, ()>>> = LazyLock::new(|| {
+        Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(25))
+    });
 
     let mut know_peers = KNOWN_PEERS.lock().await;
 

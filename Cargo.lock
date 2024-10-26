@@ -1067,7 +1067,6 @@ dependencies = [
  "once_cell",
  "proxy_signature",
  "redis",
- "rustc-hash",
  "serde",
  "serde_json",
  "sha3",
@@ -1575,9 +1574,9 @@ dependencies = [
 
 [[package]]
 name = "rustc-hash"
-version = "1.1.0"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
+checksum = "583034fd73374156e66797ed8e5b0d5690409c9226b22d87cb7f19821c05d152"
 
 [[package]]
 name = "rustc-hex"
@@ -1881,9 +1880,12 @@ checksum = "42657b1a6f4d817cda8e7a0ace261fe0cc946cf3a80314390b22cc61ae080792"
 
 [[package]]
 name = "timed-map"
-version = "0.1.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "589dc3ef6288d2afc0d355d82cc34b1894bfc85844c4d69b6607d4862181ded1"
+checksum = "9d4e2e0c83d81123e086105a1f6389fdeefa0ba87923e42b4e747d92a5666acc"
+dependencies = [
+ "rustc-hash",
+]
 
 [[package]]
 name = "tiny-keccak"
