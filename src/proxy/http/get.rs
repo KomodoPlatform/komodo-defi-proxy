@@ -73,6 +73,16 @@ pub(crate) async fn proxy(
         }
     };
 
+    // NEW: Log unexpected upstream status codes for easier debugging
+    let status = res.status();
+    tracked_log(
+        log::Level::Warn,
+        remote_addr.ip(),
+        signed_message.address,
+        &target_uri,
+        format!("Upstream responded with status {:?}", status),
+    );
+
     Ok(res)
 }
 

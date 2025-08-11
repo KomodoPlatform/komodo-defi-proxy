@@ -26,6 +26,10 @@ pub(crate) async fn validation_middleware(
     req_uri: &Uri,
     remote_addr: &SocketAddr,
 ) -> Result<(), StatusCode> {
+    // If KDF access checks are disabled via config, bypass signature, peer and rate-limit validations.
+    if !cfg.kdf_access_only {
+        return Ok(());
+    }
     let mut db = Db::create_instance(cfg).await;
 
     match db.read_address_status(&signed_message.address).await {

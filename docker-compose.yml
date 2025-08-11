@@ -1,20 +1,57 @@
-version: '3.8'
 services:
   redis:
     image: redis:7.2.4-alpine3.19
     restart: always
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    command: redis-server --appendonly yes --appendfsync everysec
+
 
   proxy:
     build:
       context: ./
       dockerfile: Containerfile
-    ports:
-      - "6150:6150"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+      kdf:
+        condition: service_healthy
     environment:
-      AUTH_APP_CONFIG_PATH: /usr/src/komodo-defi-proxy/assets/.config_test
+      AUTH_APP_CONFIG_PATH: /usr/src/komodo-defi-proxy/assets/auth_conf.json
     volumes:
       - ./assets:/usr/src/komodo-defi-proxy/assets
+    ports:
+      - "6150:6150"
+    restart: always
+
+  kdf:
+    build:
+      context: ./kdf
+      dockerfile: Dockerfile
+    ports:
+      - "7783:7783" # RPC
+      - "42845:42845" # TCP p2p
+      - "42855:42855" # WSS p2p
+    volumes:
+      - ./kdf/DB:/root/.kdf/DB
+      - ./kdf/MM2.json:/root/.kdf/MM2.json
+      - ./kdf/coins:/root/.kdf/coins
+      - ./kdf/healthcheck.sh:/root/healthcheck.sh
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "/root/healthcheck.sh"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  redis_data:

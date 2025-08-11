@@ -169,12 +169,18 @@ where
     T: DeserializeOwned,
 {
     let (parts, body) = req.into_parts();
-    let header_value = parts
-        .headers
-        .get(X_AUTH_PAYLOAD)
-        .ok_or("Missing X-Auth-Payload header")?
-        .to_str()?;
-    let proxy_sign: ProxySign = serde_json::from_str(header_value)?;
+    // Try to read header normally
+    let header_val_opt = parts.headers.get(X_AUTH_PAYLOAD);
+    let proxy_sign: ProxySign = if let Some(hv) = header_val_opt {
+        serde_json::from_str(hv.to_str()?)?
+    } else {
+        // Allow missing header when KDF checks are disabled
+        if !crate::ctx::get_app_config().kdf_access_only {
+            serde_json::from_str(r#"{\"address\":"**not-available**",\"msg\":\"\",\"sig\":\"\"}"#)?
+        } else {
+            return Err("Missing X-Auth-Payload header".into());
+        }
+    };
     let body_bytes = hyper::body::to_bytes(body).await?;
     if body_bytes.is_empty() {
         return Err("Empty body cannot be deserialized into non-optional type T".into());
@@ -187,12 +193,16 @@ where
 /// Parses [ProxySign] value from X-Auth-Payload header
 async fn parse_auth_header(req: Request<Body>) -> GenericResult<(Request<Body>, ProxySign)> {
     let (parts, body) = req.into_parts();
-    let header_value = parts
-        .headers
-        .get(X_AUTH_PAYLOAD)
-        .ok_or("Missing X-Auth-Payload header")?
-        .to_str()?;
-    let payload: ProxySign = serde_json::from_str(header_value)?;
+    let header_val_opt = parts.headers.get(X_AUTH_PAYLOAD);
+    let payload: ProxySign = if let Some(hv) = header_val_opt {
+        serde_json::from_str(hv.to_str()?)?
+    } else {
+        if !crate::ctx::get_app_config().kdf_access_only {
+            serde_json::from_str(r#"{\"address\":"**not-available**",\"msg\":\"\",\"sig\":\"\"}"#)?
+        } else {
+            return Err("Missing X-Auth-Payload header".into());
+        }
+    };
     let new_req = Request::from_parts(parts, body);
     Ok((new_req, payload))
 }

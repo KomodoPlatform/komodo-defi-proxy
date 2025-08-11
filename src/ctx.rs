@@ -14,6 +14,10 @@ const fn default_peer_caching_secs() -> u64 {
     10
 }
 
+const fn default_kdf_access_only() -> bool {
+    true
+}
+
 static CONFIG: OnceCell<AppConfig> = OnceCell::new();
 
 pub(crate) fn get_app_config() -> &'static AppConfig {
@@ -70,6 +74,9 @@ pub(crate) struct AppConfig {
     /// sending repeated `peer_connection_healthcheck` requests for every proxy request.
     #[serde(default = "default_peer_caching_secs")]
     pub(crate) peer_healthcheck_caching_secs: u64,
+    /// Whether KDF-level security checks (signed message & peer validation) are enforced. If `false`, the proxy will bypass the X-Auth-Payload signature validation and KDF peer health-check. Defaults to `true`.
+    #[serde(default = "default_kdf_access_only")]
+    pub(crate) kdf_access_only: bool,
 }
 
 /// Defines a routing rule for proxying requests from an inbound route to an outbound URL
@@ -216,6 +223,7 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
             rp_60_min: 555,
         },
         peer_healthcheck_caching_secs: 10,
+        kdf_access_only: true,
     }
 }
 
@@ -297,6 +305,7 @@ fn test_app_config_serialzation_and_deserialization() {
             "rp_60_min": 555
         },
         "peer_healthcheck_caching_secs": 10,
+        "kdf_access_only": true,
     });
 
     let actual_config: AppConfig = serde_json::from_str(&json_config.to_string()).unwrap();
