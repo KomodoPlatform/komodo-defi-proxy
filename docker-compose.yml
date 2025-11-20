@@ -22,8 +22,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      kdf:
-        condition: service_healthy
     environment:
       AUTH_APP_CONFIG_PATH: /usr/src/komodo-defi-proxy/assets/auth_conf.json
     volumes:
@@ -46,12 +44,6 @@ services:
       - ./kdf/coins:/root/.kdf/coins
       - ./kdf/healthcheck.sh:/root/healthcheck.sh
     restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "/root/healthcheck.sh"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 5s
 
 volumes:
   redis_data:

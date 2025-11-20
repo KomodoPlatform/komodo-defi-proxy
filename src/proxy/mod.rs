@@ -176,7 +176,16 @@ where
     } else {
         // Allow missing header when KDF checks are disabled
         if !crate::ctx::get_app_config().kdf_access_only {
-            serde_json::from_str(r#"{\"address\":"**not-available**",\"msg\":\"\",\"sig\":\"\"}"#)?
+            // Create a dummy ProxySign with the correct structure
+            let dummy_signature_bytes = vec![0u8; 64];
+            let dummy_public_key = [vec![8u8, 1u8, 18u8, 32u8], vec![0u8; 32]].concat();
+            let dummy_proxy_sign = format!(
+                r#"{{"signature_bytes":{},"address":"**not-available**","raw_message":{{"uri":"{}","body_size":0,"public_key_encoded":{},"expires_at":4070908800}}}}"#,
+                serde_json::to_string(&dummy_signature_bytes)?,
+                parts.uri.to_string(),
+                serde_json::to_string(&dummy_public_key)?
+            );
+            serde_json::from_str(&dummy_proxy_sign)?
         } else {
             return Err("Missing X-Auth-Payload header".into());
         }
@@ -198,7 +207,16 @@ async fn parse_auth_header(req: Request<Body>) -> GenericResult<(Request<Body>, 
         serde_json::from_str(hv.to_str()?)?
     } else {
         if !crate::ctx::get_app_config().kdf_access_only {
-            serde_json::from_str(r#"{\"address\":"**not-available**",\"msg\":\"\",\"sig\":\"\"}"#)?
+            // Create a dummy ProxySign with the correct structure
+            let dummy_signature_bytes = vec![0u8; 64];
+            let dummy_public_key = [vec![8u8, 1u8, 18u8, 32u8], vec![0u8; 32]].concat();
+            let dummy_proxy_sign = format!(
+                r#"{{"signature_bytes":{},"address":"**not-available**","raw_message":{{"uri":"{}","body_size":0,"public_key_encoded":{},"expires_at":4070908800}}}}"#,
+                serde_json::to_string(&dummy_signature_bytes)?,
+                parts.uri.to_string(),
+                serde_json::to_string(&dummy_public_key)?
+            );
+            serde_json::from_str(&dummy_proxy_sign)?
         } else {
             return Err("Missing X-Auth-Payload header".into());
         }
