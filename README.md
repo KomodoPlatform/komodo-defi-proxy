@@ -27,7 +27,7 @@ Create the configuration file for app runtime.
     {
       "inbound_route": "/dev",
       "outbound_route": "http://localhost:8000",
-      "proxy_type": "quicknode", # available types are: "quicknode", "moralis", "block_pi"
+      "proxy_type": "quicknode", # available types are: "quicknode", "moralis", "block_pi", "gas_free"
       "authorized": false,
       "allowed_rpc_methods": [
         "eth_blockNumber",
@@ -44,6 +44,24 @@ Create the configuration file for app runtime.
     "rp_60_min": 575
   },
   "peer_healthcheck_caching_secs": 10
+}
+```
+
+GasFree routes keep the GasFree API credentials on the proxy server and forward both GET and POST requests to the upstream path after the inbound prefix is stripped:
+
+```json
+{
+  "inbound_route": "/gasfree",
+  "outbound_route": "https://open.gasfree.io",
+  "proxy_type": {
+    "gas_free": {
+      "api_key": "your-gasfree-api-key",
+      "api_secret": "your-gasfree-api-secret"
+    }
+  },
+  "authorized": false,
+  "allowed_rpc_methods": [],
+  "rate_limiter": null
 }
 ```
 

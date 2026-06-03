@@ -52,6 +52,19 @@
       }
     },
     {
+      "inbound_route": "/gasfree",
+      "outbound_route": "https://open.gasfree.io",
+      "proxy_type": {
+        "gas_free": {
+          "api_key": "test-gasfree-api-key",
+          "api_secret": "test-gasfree-api-secret"
+        }
+      },
+      "authorized": false,
+      "allowed_rpc_methods": [],
+      "rate_limiter": null
+    },
+    {
       "inbound_route": "/",
       "outbound_route": "https://adex.io",
       "proxy_type": "moralis",
