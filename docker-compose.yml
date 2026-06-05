@@ -28,6 +28,8 @@ services:
       AUTH_APP_CONFIG_PATH: /usr/src/komodo-defi-proxy/assets/auth_conf.json
     volumes:
       - ./assets:/usr/src/komodo-defi-proxy/assets
+      - ./public-key.pem:/usr/src/komodo-defi-proxy/public-key.pem:ro
+      - ./private-key.pem:/usr/src/komodo-defi-proxy/private-key.pem:ro
     ports:
       - "127.0.0.1:6150:6150"
     restart: always
@@ -38,8 +40,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "127.0.0.1:8967:8967" # RPC
-      - "127.0.0.1:42845:42845" # TCP p2p
-      - "127.0.0.1:42855:42855" # WSS p2p
+      - "127.0.0.1:32326:32326" # TCP p2p
+      - "127.0.0.1:32336:32336" # WSS p2p
     volumes:
       - ./kdf/DB:/root/.kdf/DB
       - ./kdf/MM2.json:/root/.kdf/MM2.json
