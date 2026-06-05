@@ -1,5 +1,5 @@
 # Use the upstream KDF dev image as the base
-FROM komodoofficial/komodo-defi-framework:dev-latest
+FROM gleec/komodo-defi-framework:dev-latest
 
 # Install troubleshooting tools: curl, netstat (net-tools) and pgrep (procps)
 RUN apt-get update \
