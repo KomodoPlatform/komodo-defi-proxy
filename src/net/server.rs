@@ -21,6 +21,46 @@ pub(crate) fn is_private_ip(ip: &IpAddr) -> bool {
 
 fn get_real_address(req: &Request<Body>, remote_addr: &SocketAddr) -> GenericResult<SocketAddr> {
     if let Some(ip) = req.headers().get(X_FORWARDED_FOR) {
+        // NOTE (Decker): This parses the ENTIRE `X-Forwarded-For` value as a single IP.
+        // That is only correct when the value contains exactly one IP. Per RFC 7239 /
+        // de-facto convention, XFF is a COMMA-SEPARATED LIST of IPs that grows as the
+        // request passes through proxies:
+        //
+        //     X-Forwarded-For: <original-client>, <proxy-1>, <proxy-2>, ...
+        //
+        // The leftmost entry is the original client; each hop appends the address it saw.
+        //
+        // How nginx populates it depends on the directive in front of us:
+        //
+        //   1) APPEND (default-ish, multi-value):
+        //        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        //      nginx takes whatever the client sent and APPENDS the real connecting IP:
+        //        client sends "X-Forwarded-For: 127.0.0.1"
+        //        -> upstream receives "127.0.0.1, <real-client-ip>"
+        //      With the single-IP parse below, `IpAddr::from_str("127.0.0.1, 1.2.3.4")`
+        //      FAILS -> `?` returns Err -> caller responds 500. So any client-supplied
+        //      XFF turns into a 500 here (fail-closed, but by accident, not by design).
+        //
+        //   2) REPLACE (single-value, recommended for this setup):
+        //        proxy_set_header X-Forwarded-For $remote_addr;
+        //      nginx OVERWRITES the header with the real TCP peer IP it sees. The client
+        //      cannot influence it:
+        //        client sends "X-Forwarded-For: 127.0.0.1"
+        //        -> upstream receives "<real-client-ip>"  (single IP, parses fine)
+        //      This is what keeps the admin/private branch (is_private_ip) unreachable
+        //      from the outside: a spoofed "127.0.0.1" can never reach us.
+        //
+        //   3) PASS-THROUGH (DANGEROUS, do NOT use):
+        //        proxy_set_header X-Forwarded-For $http_x_forwarded_for;
+        //      nginx forwards the client value verbatim. Then a client sending
+        //      "X-Forwarded-For: 127.0.0.1" is trusted here as a private IP -> full
+        //      auth bypass + access to /address-status. This is the critical XFF-trust
+        //      vulnerability; never configure nginx this way.
+        //
+        // SECURITY: trusting XFF unconditionally is unsafe regardless of nginx config.
+        // The robust fix is to (a) decide privacy from the real TCP `remote_addr`, and
+        // (b) only honor XFF when the TCP peer is in an allowlist of trusted upstreams,
+        // parsing it as a list and taking the appropriate entry — not as a single IP.
         let addr = IpAddr::from_str(ip.to_str()?)?;
 
         return Ok(SocketAddr::new(addr, remote_addr.port()));
