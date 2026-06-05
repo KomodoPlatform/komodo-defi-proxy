@@ -5,8 +5,9 @@ FROM komodoofficial/komodo-defi-framework:dev-latest
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        curl \
-       net-tools \
-       procps \
+        net-tools \
+        netcat-openbsd \
+        procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Keep the original entrypoint/cmd from the base image ("kdf") 
