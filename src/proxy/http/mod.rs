@@ -14,6 +14,7 @@ use crate::{
     rate_limiter::RateLimitOperations,
 };
 
+pub(crate) mod gasfree;
 pub(crate) mod get;
 pub(crate) mod post;
 

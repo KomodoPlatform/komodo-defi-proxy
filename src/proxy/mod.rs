@@ -31,6 +31,7 @@ pub(crate) enum ProxyType {
     Quicknode,
     Moralis,
     BlockPi,
+    GasFree { api_key: String, api_secret: String },
 }
 
 /// Represents the types of payloads that can be processed by the proxy, with each variant tailored to a specific proxy type.
@@ -49,6 +50,8 @@ pub(crate) enum PayloadData {
         payload: RpcPayload,
         proxy_sign: ProxySign,
     },
+    /// GasFree feature requires only Signed Message in X-Auth-Payload header; body is forwarded intact.
+    GasFree(ProxySign),
 }
 
 impl PayloadData {
@@ -58,6 +61,7 @@ impl PayloadData {
             PayloadData::Quicknode { proxy_sign, .. } => proxy_sign,
             PayloadData::Moralis(proxy_sign) => proxy_sign,
             PayloadData::BlockPi { proxy_sign, .. } => proxy_sign,
+            PayloadData::GasFree(proxy_sign) => proxy_sign,
         }
     }
 }
@@ -89,6 +93,10 @@ pub(crate) async fn generate_payload_from_req(
                 proxy_sign,
             };
             Ok((req, payload_data))
+        }
+        ProxyType::GasFree { .. } => {
+            let (req, proxy_sign) = parse_auth_header(req).await?;
+            Ok((req, PayloadData::GasFree(proxy_sign)))
         }
     }
 }
@@ -142,6 +150,9 @@ pub(crate) async fn proxy(
                 proxy_route,
             )
             .await
+        }
+        PayloadData::GasFree(proxy_sign) => {
+            http::gasfree::proxy(req, remote_addr, proxy_sign, x_forwarded_for, proxy_route).await
         }
     }
 }
@@ -301,6 +312,16 @@ pub(crate) async fn insert_jwt_to_http_header(
     Ok(())
 }
 
+fn resolve_proxy_route<'a>(cfg: &'a AppConfig, req: &mut Request<Body>) -> Option<&'a ProxyRoute> {
+    match req.method() {
+        &Method::GET => cfg.get_proxy_route_by_uri(req.uri_mut()),
+        _ => {
+            let by_inbound = cfg.get_proxy_route_by_inbound(req.uri().path());
+            by_inbound.or_else(|| cfg.get_proxy_route_by_uri(req.uri_mut()))
+        }
+    }
+}
+
 pub(crate) async fn http_handler(
     cfg: &AppConfig,
     mut req: Request<Body>,
@@ -331,34 +352,18 @@ pub(crate) async fn http_handler(
         return handle_preflight();
     }
 
-    let proxy_route = match req.method() {
-        &Method::GET => match cfg.get_proxy_route_by_uri(req.uri_mut()) {
-            Some(proxy_route) => proxy_route,
-            None => {
-                tracked_log(
-                    log::Level::Warn,
-                    remote_addr.ip(),
-                    "**not-available**",
-                    req_uri,
-                    "Proxy route not found for GET request, returning 404.",
-                );
-
-                return response_by_status(StatusCode::NOT_FOUND);
-            }
-        },
-        _ => match cfg.get_proxy_route_by_inbound(req.uri().path()) {
-            Some(proxy_route) => proxy_route,
-            None => {
-                tracked_log(
-                    log::Level::Warn,
-                    remote_addr.ip(),
-                    "**not-available**",
-                    req_uri,
-                    "Proxy route not found for non-GET request, returning 404.",
-                );
-                return response_by_status(StatusCode::NOT_FOUND);
-            }
-        },
+    let Some(proxy_route) = resolve_proxy_route(cfg, &mut req) else {
+        tracked_log(
+            log::Level::Warn,
+            remote_addr.ip(),
+            "**not-available**",
+            req_uri,
+            format!(
+                "Proxy route not found for {} request, returning 404.",
+                req.method()
+            ),
+        );
+        return response_by_status(StatusCode::NOT_FOUND);
     };
 
     let (req, payload) = match generate_payload_from_req(req, &proxy_route.proxy_type).await {
