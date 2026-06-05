@@ -194,6 +194,17 @@ pub(crate) fn get_app_config_test_instance() -> AppConfig {
                 }),
             },
             ProxyRoute {
+                inbound_route: String::from("/gasfree"),
+                outbound_route: String::from("https://open.gasfree.io"),
+                proxy_type: ProxyType::GasFree {
+                    api_key: String::from("test-gasfree-api-key"),
+                    api_secret: String::from("test-gasfree-api-secret"),
+                },
+                authorized: false,
+                allowed_rpc_methods: Vec::default(),
+                rate_limiter: None,
+            },
+            ProxyRoute {
                 inbound_route: String::from("/"),
                 outbound_route: String::from("https://adex.io"),
                 proxy_type: ProxyType::Moralis,
@@ -273,6 +284,19 @@ fn test_app_config_serialzation_and_deserialization() {
                     "rp_30_min": 1000,
                     "rp_60_min": 2000
                 }
+            },
+            {
+                "inbound_route": "/gasfree",
+                "outbound_route": "https://open.gasfree.io",
+                "proxy_type": {
+                    "gas_free": {
+                        "api_key": "test-gasfree-api-key",
+                        "api_secret": "test-gasfree-api-secret"
+                    }
+                },
+                "authorized": false,
+                "allowed_rpc_methods": [],
+                "rate_limiter": null
             },
             {
                 "inbound_route": "/",
