@@ -71,7 +71,19 @@ pub(crate) async fn proxy(
         return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
-    remove_hop_by_hop_headers(&mut req, &[])?;
+    // Strip browser-conditional metadata along with the hop-by-hop set: a browser
+    // wallet's cross-site fetch attaches an `Origin` header, and open.gasfree.io's
+    // CORS/WAF layer answers 403 to origins it doesn't recognize (issue #30).
+    // These headers describe the client<->proxy leg and are meaningless upstream.
+    let additional_headers_to_remove = &[
+        header::ORIGIN,
+        header::REFERER,
+        HeaderName::from_static("sec-fetch-dest"),
+        HeaderName::from_static("sec-fetch-mode"),
+        HeaderName::from_static("sec-fetch-site"),
+        HeaderName::from_static("priority"),
+    ];
+    remove_hop_by_hop_headers(&mut req, additional_headers_to_remove)?;
 
     req.headers_mut()
         .insert(HeaderName::from_static(X_FORWARDED_FOR), x_forwarded_for);
