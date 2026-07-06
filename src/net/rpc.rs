@@ -5,7 +5,12 @@ use hyper_tls::HttpsConnector;
 use proxy_signature::ProxySign;
 use serde::{Deserialize, Serialize};
 use serde_json::from_reader;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// Upper bound for a full outbound RPC round trip (connect + request + response body).
+/// KDF's own `peer_connection_healthcheck` takes ~10s for disconnected peers, so this
+/// must stay comfortably above that; a wedged KDF must yield an error, not a hang.
+const RPC_TIMEOUT: Duration = Duration::from_secs(30);
 
 use crate::proxy::{insert_jwt_to_http_header, APPLICATION_JSON};
 
@@ -75,9 +80,10 @@ impl RpcClient {
             .to_owned();
         let t_start = Instant::now();
         log::debug!(
-            "hang-debug: RpcClient::send starting: method '{}' to {} (NOTE: no timeout is configured on this client)",
+            "hang-debug: RpcClient::send starting: method '{}' to {} (timeout: {:?})",
             rpc_method,
-            self.url
+            self.url,
+            RPC_TIMEOUT
         );
 
         let mut req = Request::post(&self.url).body(Body::from(payload.to_string()))?;
@@ -91,7 +97,24 @@ impl RpcClient {
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build(https);
 
-        let res = match client.request(req).await {
+        let response_result = match tokio::time::timeout(RPC_TIMEOUT, client.request(req)).await {
+            Ok(result) => result,
+            Err(_) => {
+                log::warn!(
+                    "hang-debug: RpcClient::send '{}' to {}: TIMED OUT after {:?}",
+                    rpc_method,
+                    self.url,
+                    RPC_TIMEOUT
+                );
+                return Err(format!(
+                    "RPC '{}' to {} timed out after {:?}",
+                    rpc_method, self.url, RPC_TIMEOUT
+                )
+                .into());
+            }
+        };
+
+        let res = match response_result {
             Ok(res) => {
                 log::debug!(
                     "hang-debug: RpcClient::send '{}' to {}: response headers received in {}ms, status {}",
@@ -114,7 +137,25 @@ impl RpcClient {
             }
         };
 
-        let body = match aggregate(res).await {
+        let remaining = RPC_TIMEOUT.saturating_sub(t_start.elapsed());
+        let body_result = match tokio::time::timeout(remaining, aggregate(res)).await {
+            Ok(result) => result,
+            Err(_) => {
+                log::warn!(
+                    "hang-debug: RpcClient::send '{}' to {}: body read TIMED OUT after {:?} total",
+                    rpc_method,
+                    self.url,
+                    RPC_TIMEOUT
+                );
+                return Err(format!(
+                    "RPC '{}' to {}: body read timed out after {:?} total",
+                    rpc_method, self.url, RPC_TIMEOUT
+                )
+                .into());
+            }
+        };
+
+        let body = match body_result {
             Ok(body) => body,
             Err(e) => {
                 log::debug!(

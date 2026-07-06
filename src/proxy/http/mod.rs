@@ -2,10 +2,11 @@ use hyper::{StatusCode, Uri};
 use libp2p::PeerId;
 use proxy_signature::ProxySign;
 use std::{
+    collections::HashMap,
     net::SocketAddr,
     str::FromStr,
     sync::atomic::{AtomicU64, AtomicUsize, Ordering},
-    sync::LazyLock,
+    sync::{Arc, LazyLock},
     time::{Duration, Instant},
 };
 use timed_map::{MapKind, StdClock, TimedMap};
@@ -30,7 +31,7 @@ const MAX_SIGNATURE_EXP_SECS: u64 = 15;
 /// `validation_middleware`, used to correlate log lines of one request.
 static VALIDATION_REQ_ID: AtomicU64 = AtomicU64::new(0);
 
-/// hang-debug: number of tasks currently blocked waiting for the KNOWN_PEERS lock.
+/// hang-debug: number of tasks currently blocked waiting for a per-peer healthcheck lock.
 static KNOWN_PEERS_LOCK_WAITERS: AtomicUsize = AtomicUsize::new(0);
 
 pub(crate) async fn validation_middleware(
@@ -86,23 +87,8 @@ pub(crate) async fn validation_middleware(
         AddressStatus::Trusted => Ok(()),
         AddressStatus::Blocked => Err(StatusCode::FORBIDDEN),
         AddressStatus::None => {
-            let t_hc = Instant::now();
-            let hc_result =
-                peer_connection_healthcheck(cfg, signed_message, req_uri, remote_addr, req_id)
-                    .await;
-            tracked_log(
-                log::Level::Debug,
-                remote_addr.ip(),
-                &signed_message.address,
-                req_uri,
-                format!(
-                    "hang-debug: [req#{req_id}] peer_connection_healthcheck finished in {}ms (result: {:?})",
-                    t_hc.elapsed().as_millis(),
-                    hc_result
-                ),
-            );
-            hc_result?;
-
+            // The signature check is cheap and local, so it runs before the networked
+            // peer healthcheck; unauthenticated requests must not trigger KDF RPCs.
             let t_sig = Instant::now();
             let sig_valid = signed_message.is_valid_message(MAX_SIGNATURE_EXP_SECS);
             tracked_log(
@@ -127,6 +113,23 @@ pub(crate) async fn validation_middleware(
 
                 return Err(StatusCode::UNAUTHORIZED);
             }
+
+            let t_hc = Instant::now();
+            let hc_result =
+                peer_connection_healthcheck(cfg, signed_message, req_uri, remote_addr, req_id)
+                    .await;
+            tracked_log(
+                log::Level::Debug,
+                remote_addr.ip(),
+                &signed_message.address,
+                req_uri,
+                format!(
+                    "hang-debug: [req#{req_id}] peer_connection_healthcheck finished in {}ms (result: {:?})",
+                    t_hc.elapsed().as_millis(),
+                    hc_result
+                ),
+            );
+            hc_result?;
 
             let rate_limiter_key =
                 format!("{}:{}", proxy_route.inbound_route, signed_message.address);
@@ -204,6 +207,13 @@ pub(crate) async fn validation_middleware(
     }
 }
 
+/// Checks whether the peer has been confirmed as connected to the KDF network,
+/// asking KDF via RPC on cache misses.
+///
+/// The `KNOWN_PEERS` cache mutex is only ever held for map lookups/inserts — never
+/// across the KDF RPC await. Concurrent healthchecks for the *same* peer are
+/// deduplicated through a per-peer mutex, so requests for different peers proceed
+/// in parallel and a slow healthcheck only delays the peer that caused it.
 async fn peer_connection_healthcheck(
     cfg: &AppConfig,
     signed_message: &ProxySign,
@@ -219,46 +229,9 @@ async fn peer_connection_healthcheck(
         Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(25))
     });
 
-    let waiters = KNOWN_PEERS_LOCK_WAITERS.fetch_add(1, Ordering::SeqCst) + 1;
-    tracked_log(
-        log::Level::Debug,
-        remote_addr.ip(),
-        &signed_message.address,
-        req_uri,
-        format!("hang-debug: [req#{req_id}] waiting for KNOWN_PEERS lock (waiters incl. this one: {waiters})"),
-    );
-
-    let t_lock_wait = Instant::now();
-    let mut know_peers = KNOWN_PEERS.lock().await;
-    let t_lock_held = Instant::now();
-    let waiters_left = KNOWN_PEERS_LOCK_WAITERS.fetch_sub(1, Ordering::SeqCst) - 1;
-    tracked_log(
-        log::Level::Debug,
-        remote_addr.ip(),
-        &signed_message.address,
-        req_uri,
-        format!(
-            "hang-debug: [req#{req_id}] KNOWN_PEERS lock ACQUIRED after {}ms wait (waiters still queued: {waiters_left})",
-            t_lock_wait.elapsed().as_millis()
-        ),
-    );
-
-    // hang-debug: log lock hold duration on every exit path of the critical section.
-    macro_rules! log_lock_release {
-        ($outcome:expr) => {
-            tracked_log(
-                log::Level::Debug,
-                remote_addr.ip(),
-                &signed_message.address,
-                req_uri,
-                format!(
-                    "hang-debug: [req#{req_id}] KNOWN_PEERS lock RELEASED after being held {}ms (outcome: {})",
-                    t_lock_held.elapsed().as_millis(),
-                    $outcome
-                ),
-            );
-        };
-    }
+    /// Per-peer locks serializing concurrent healthchecks of the same peer id.
+    static IN_FLIGHT_HEALTHCHECKS: LazyLock<Mutex<HashMap<PeerId, Arc<Mutex<()>>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
 
     let Ok(peer_id) = PeerId::from_str(&signed_message.address) else {
         tracked_log(
@@ -271,72 +244,127 @@ async fn peer_connection_healthcheck(
                 signed_message.address
             ),
         );
-        log_lock_release!("invalid peer id, 401");
         return Err(StatusCode::UNAUTHORIZED);
     };
 
-    let is_known = know_peers.get(&peer_id).is_some();
+    // Fast path: cache lookup under a short-lived lock.
+    if KNOWN_PEERS.lock().await.get(&peer_id).is_some() {
+        tracked_log(
+            log::Level::Debug,
+            remote_addr.ip(),
+            &signed_message.address,
+            req_uri,
+            format!("hang-debug: [req#{req_id}] KNOWN_PEERS cache lookup: HIT (skipping KDF RPC)"),
+        );
+        return Ok(());
+    }
+
+    // Cache miss: serialize with other in-flight healthchecks for this peer only.
+    let peer_lock = IN_FLIGHT_HEALTHCHECKS
+        .lock()
+        .await
+        .entry(peer_id)
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone();
+
+    let waiters = KNOWN_PEERS_LOCK_WAITERS.fetch_add(1, Ordering::SeqCst) + 1;
     tracked_log(
         log::Level::Debug,
         remote_addr.ip(),
         &signed_message.address,
         req_uri,
-        format!("hang-debug: [req#{req_id}] KNOWN_PEERS cache lookup: {}", if is_known { "HIT (skipping KDF RPC)" } else { "MISS (KDF RPC required, WHILE HOLDING THE LOCK)" }),
+        format!("hang-debug: [req#{req_id}] cache MISS, waiting for per-peer healthcheck lock (healthcheck waiters incl. this one: {waiters})"),
     );
 
-    if !is_known {
-        let t_rpc = Instant::now();
-        let rpc_result = peer_connection_healthcheck_rpc(cfg, &signed_message.address).await;
+    let t_lock_wait = Instant::now();
+    let result = {
+        let _guard = peer_lock.lock().await;
+        KNOWN_PEERS_LOCK_WAITERS.fetch_sub(1, Ordering::SeqCst);
         tracked_log(
             log::Level::Debug,
             remote_addr.ip(),
             &signed_message.address,
             req_uri,
             format!(
-                "hang-debug: [req#{req_id}] peer_connection_healthcheck RPC to KDF took {}ms, response: {}",
-                t_rpc.elapsed().as_millis(),
-                match &rpc_result {
-                    Ok(v) => v.to_string(),
-                    Err(e) => format!("ERROR: {e}"),
-                }
+                "hang-debug: [req#{req_id}] per-peer healthcheck lock ACQUIRED after {}ms wait",
+                t_lock_wait.elapsed().as_millis()
             ),
         );
-        match rpc_result {
-            Ok(response) => {
-                if response["result"] == serde_json::json!(true) {
-                    know_peers.insert_expirable(peer_id, (), know_peer_expiration);
-                } else {
+
+        // Re-check the cache: another request for this peer may have completed the
+        // healthcheck while we were waiting for the per-peer lock.
+        if KNOWN_PEERS.lock().await.get(&peer_id).is_some() {
+            tracked_log(
+                log::Level::Debug,
+                remote_addr.ip(),
+                &signed_message.address,
+                req_uri,
+                format!("hang-debug: [req#{req_id}] KNOWN_PEERS cache lookup after wait: HIT (skipping KDF RPC)"),
+            );
+            Ok(())
+        } else {
+            let t_rpc = Instant::now();
+            let rpc_result = peer_connection_healthcheck_rpc(cfg, &signed_message.address).await;
+            tracked_log(
+                log::Level::Debug,
+                remote_addr.ip(),
+                &signed_message.address,
+                req_uri,
+                format!(
+                    "hang-debug: [req#{req_id}] peer_connection_healthcheck RPC to KDF took {}ms (lock-free), response: {}",
+                    t_rpc.elapsed().as_millis(),
+                    match &rpc_result {
+                        Ok(v) => v.to_string(),
+                        Err(e) => format!("ERROR: {e}"),
+                    }
+                ),
+            );
+            match rpc_result {
+                Ok(response) => {
+                    if response["result"] == serde_json::json!(true) {
+                        KNOWN_PEERS
+                            .lock()
+                            .await
+                            .insert_expirable(peer_id, (), know_peer_expiration);
+                        Ok(())
+                    } else {
+                        tracked_log(
+                            log::Level::Warn,
+                            remote_addr.ip(),
+                            &signed_message.address,
+                            req_uri,
+                            "Peer isn't connected to KDF network, returning 401",
+                        );
+                        Err(StatusCode::UNAUTHORIZED)
+                    }
+                }
+                Err(error) => {
                     tracked_log(
-                        log::Level::Warn,
+                        log::Level::Error,
                         remote_addr.ip(),
                         &signed_message.address,
                         req_uri,
-                        "Peer isn't connected to KDF network, returning 401",
+                        format!(
+                            "`peer_connection_healthcheck` RPC failed, returning 500. Error: {}",
+                            error
+                        ),
                     );
-
-                    log_lock_release!("peer not connected, 401");
-                    return Err(StatusCode::UNAUTHORIZED);
+                    Err(StatusCode::INTERNAL_SERVER_ERROR)
                 }
             }
-            Err(error) => {
-                tracked_log(
-                    log::Level::Error,
-                    remote_addr.ip(),
-                    &signed_message.address,
-                    req_uri,
-                    format!(
-                        "`peer_connection_healthcheck` RPC failed, returning 500. Error: {}",
-                        error
-                    ),
-                );
-                log_lock_release!("RPC error, 500");
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
-            }
+        }
+    };
+
+    // Drop this peer's in-flight entry unless other requests still hold it
+    // (map + our clone = 2 strong refs when nobody else is waiting).
+    {
+        let mut in_flight = IN_FLIGHT_HEALTHCHECKS.lock().await;
+        if Arc::strong_count(&peer_lock) <= 2 {
+            in_flight.remove(&peer_id);
         }
     }
 
-    log_lock_release!("ok");
-    Ok(())
+    result
 }
 
 #[cfg(test)]
