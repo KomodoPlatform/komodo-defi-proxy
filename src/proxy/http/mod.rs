@@ -1,7 +1,13 @@
 use hyper::{StatusCode, Uri};
 use libp2p::PeerId;
 use proxy_signature::ProxySign;
-use std::{net::SocketAddr, str::FromStr, sync::LazyLock, time::Duration};
+use std::{
+    net::SocketAddr,
+    str::FromStr,
+    sync::atomic::{AtomicU64, AtomicUsize, Ordering},
+    sync::LazyLock,
+    time::{Duration, Instant},
+};
 use timed_map::{MapKind, StdClock, TimedMap};
 use tokio::sync::Mutex;
 
@@ -20,6 +26,13 @@ pub(crate) mod post;
 
 const MAX_SIGNATURE_EXP_SECS: u64 = 15;
 
+/// hang-debug: monotonically increasing id assigned to every request entering
+/// `validation_middleware`, used to correlate log lines of one request.
+static VALIDATION_REQ_ID: AtomicU64 = AtomicU64::new(0);
+
+/// hang-debug: number of tasks currently blocked waiting for the KNOWN_PEERS lock.
+static KNOWN_PEERS_LOCK_WAITERS: AtomicUsize = AtomicUsize::new(0);
+
 pub(crate) async fn validation_middleware(
     cfg: &AppConfig,
     signed_message: &ProxySign,
@@ -31,15 +44,79 @@ pub(crate) async fn validation_middleware(
     if !cfg.kdf_access_only {
         return Ok(());
     }
-    let mut db = Db::create_instance(cfg).await;
 
-    match db.read_address_status(&signed_message.address).await {
+    let req_id = VALIDATION_REQ_ID.fetch_add(1, Ordering::Relaxed);
+    let t_start = Instant::now();
+    tracked_log(
+        log::Level::Debug,
+        remote_addr.ip(),
+        &signed_message.address,
+        req_uri,
+        format!("hang-debug: [req#{req_id}] validation started"),
+    );
+
+    let t_redis = Instant::now();
+    let mut db = Db::create_instance(cfg).await;
+    tracked_log(
+        log::Level::Debug,
+        remote_addr.ip(),
+        &signed_message.address,
+        req_uri,
+        format!(
+            "hang-debug: [req#{req_id}] redis connection acquired in {}ms",
+            t_redis.elapsed().as_millis()
+        ),
+    );
+
+    let t_status = Instant::now();
+    let address_status = db.read_address_status(&signed_message.address).await;
+    tracked_log(
+        log::Level::Debug,
+        remote_addr.ip(),
+        &signed_message.address,
+        req_uri,
+        format!(
+            "hang-debug: [req#{req_id}] address status read as {:?} in {}ms",
+            address_status,
+            t_status.elapsed().as_millis()
+        ),
+    );
+
+    match address_status {
         AddressStatus::Trusted => Ok(()),
         AddressStatus::Blocked => Err(StatusCode::FORBIDDEN),
         AddressStatus::None => {
-            peer_connection_healthcheck(cfg, signed_message, req_uri, remote_addr).await?;
+            let t_hc = Instant::now();
+            let hc_result =
+                peer_connection_healthcheck(cfg, signed_message, req_uri, remote_addr, req_id)
+                    .await;
+            tracked_log(
+                log::Level::Debug,
+                remote_addr.ip(),
+                &signed_message.address,
+                req_uri,
+                format!(
+                    "hang-debug: [req#{req_id}] peer_connection_healthcheck finished in {}ms (result: {:?})",
+                    t_hc.elapsed().as_millis(),
+                    hc_result
+                ),
+            );
+            hc_result?;
 
-            if !signed_message.is_valid_message(MAX_SIGNATURE_EXP_SECS) {
+            let t_sig = Instant::now();
+            let sig_valid = signed_message.is_valid_message(MAX_SIGNATURE_EXP_SECS);
+            tracked_log(
+                log::Level::Debug,
+                remote_addr.ip(),
+                &signed_message.address,
+                req_uri,
+                format!(
+                    "hang-debug: [req#{req_id}] signature validation done in {}ms (valid: {sig_valid})",
+                    t_sig.elapsed().as_millis()
+                ),
+            );
+
+            if !sig_valid {
                 tracked_log(
                     log::Level::Warn,
                     remote_addr.ip(),
@@ -58,7 +135,19 @@ pub(crate) async fn validation_middleware(
                 .rate_limiter
                 .as_ref()
                 .unwrap_or(&cfg.rate_limiter);
-            match db.rate_exceeded(&rate_limiter_key, rate_limiter).await {
+            let t_rate = Instant::now();
+            let rate_result = db.rate_exceeded(&rate_limiter_key, rate_limiter).await;
+            tracked_log(
+                log::Level::Debug,
+                remote_addr.ip(),
+                &signed_message.address,
+                req_uri,
+                format!(
+                    "hang-debug: [req#{req_id}] rate_exceeded checked in {}ms",
+                    t_rate.elapsed().as_millis()
+                ),
+            );
+            match rate_result {
                 Ok(false) => {}
                 Ok(true) => {
                     tracked_log(
@@ -99,6 +188,17 @@ pub(crate) async fn validation_middleware(
                 return Err(StatusCode::INTERNAL_SERVER_ERROR);
             };
 
+            tracked_log(
+                log::Level::Debug,
+                remote_addr.ip(),
+                &signed_message.address,
+                req_uri,
+                format!(
+                    "hang-debug: [req#{req_id}] validation finished OK, total {}ms",
+                    t_start.elapsed().as_millis()
+                ),
+            );
+
             Ok(())
         }
     }
@@ -109,6 +209,7 @@ async fn peer_connection_healthcheck(
     signed_message: &ProxySign,
     req_uri: &Uri,
     remote_addr: &SocketAddr,
+    req_id: u64,
 ) -> Result<(), StatusCode> {
     // Once we know a peer is connected to the KDF network, we can assume they are connected
     // for 10 seconds without asking again.
@@ -118,7 +219,46 @@ async fn peer_connection_healthcheck(
         Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(25))
     });
 
+    let waiters = KNOWN_PEERS_LOCK_WAITERS.fetch_add(1, Ordering::SeqCst) + 1;
+    tracked_log(
+        log::Level::Debug,
+        remote_addr.ip(),
+        &signed_message.address,
+        req_uri,
+        format!("hang-debug: [req#{req_id}] waiting for KNOWN_PEERS lock (waiters incl. this one: {waiters})"),
+    );
+
+    let t_lock_wait = Instant::now();
     let mut know_peers = KNOWN_PEERS.lock().await;
+    let t_lock_held = Instant::now();
+    let waiters_left = KNOWN_PEERS_LOCK_WAITERS.fetch_sub(1, Ordering::SeqCst) - 1;
+    tracked_log(
+        log::Level::Debug,
+        remote_addr.ip(),
+        &signed_message.address,
+        req_uri,
+        format!(
+            "hang-debug: [req#{req_id}] KNOWN_PEERS lock ACQUIRED after {}ms wait (waiters still queued: {waiters_left})",
+            t_lock_wait.elapsed().as_millis()
+        ),
+    );
+
+    // hang-debug: log lock hold duration on every exit path of the critical section.
+    macro_rules! log_lock_release {
+        ($outcome:expr) => {
+            tracked_log(
+                log::Level::Debug,
+                remote_addr.ip(),
+                &signed_message.address,
+                req_uri,
+                format!(
+                    "hang-debug: [req#{req_id}] KNOWN_PEERS lock RELEASED after being held {}ms (outcome: {})",
+                    t_lock_held.elapsed().as_millis(),
+                    $outcome
+                ),
+            );
+        };
+    }
 
     let Ok(peer_id) = PeerId::from_str(&signed_message.address) else {
         tracked_log(
@@ -131,13 +271,37 @@ async fn peer_connection_healthcheck(
                 signed_message.address
             ),
         );
+        log_lock_release!("invalid peer id, 401");
         return Err(StatusCode::UNAUTHORIZED);
     };
 
     let is_known = know_peers.get(&peer_id).is_some();
+    tracked_log(
+        log::Level::Debug,
+        remote_addr.ip(),
+        &signed_message.address,
+        req_uri,
+        format!("hang-debug: [req#{req_id}] KNOWN_PEERS cache lookup: {}", if is_known { "HIT (skipping KDF RPC)" } else { "MISS (KDF RPC required, WHILE HOLDING THE LOCK)" }),
+    );
 
     if !is_known {
-        match peer_connection_healthcheck_rpc(cfg, &signed_message.address).await {
+        let t_rpc = Instant::now();
+        let rpc_result = peer_connection_healthcheck_rpc(cfg, &signed_message.address).await;
+        tracked_log(
+            log::Level::Debug,
+            remote_addr.ip(),
+            &signed_message.address,
+            req_uri,
+            format!(
+                "hang-debug: [req#{req_id}] peer_connection_healthcheck RPC to KDF took {}ms, response: {}",
+                t_rpc.elapsed().as_millis(),
+                match &rpc_result {
+                    Ok(v) => v.to_string(),
+                    Err(e) => format!("ERROR: {e}"),
+                }
+            ),
+        );
+        match rpc_result {
             Ok(response) => {
                 if response["result"] == serde_json::json!(true) {
                     know_peers.insert_expirable(peer_id, (), know_peer_expiration);
@@ -150,6 +314,7 @@ async fn peer_connection_healthcheck(
                         "Peer isn't connected to KDF network, returning 401",
                     );
 
+                    log_lock_release!("peer not connected, 401");
                     return Err(StatusCode::UNAUTHORIZED);
                 }
             }
@@ -164,11 +329,13 @@ async fn peer_connection_healthcheck(
                         error
                     ),
                 );
+                log_lock_release!("RPC error, 500");
                 return Err(StatusCode::INTERNAL_SERVER_ERROR);
             }
         }
     }
 
+    log_lock_release!("ok");
     Ok(())
 }
 

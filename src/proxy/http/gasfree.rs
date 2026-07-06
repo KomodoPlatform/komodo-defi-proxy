@@ -84,9 +84,43 @@ pub(crate) async fn proxy(
     let client = hyper::Client::builder().build(https);
 
     let target_uri = req.uri().clone();
+    let t_upstream = std::time::Instant::now();
+    tracked_log(
+        log::Level::Debug,
+        remote_addr.ip(),
+        &signed_message.address,
+        &original_req_uri,
+        format!("hang-debug: gasfree forwarding request to upstream {target_uri}"),
+    );
     let res = match client.request(req).await {
-        Ok(t) => t,
+        Ok(t) => {
+            tracked_log(
+                log::Level::Debug,
+                remote_addr.ip(),
+                &signed_message.address,
+                &original_req_uri,
+                format!(
+                    "hang-debug: gasfree upstream {} answered with status {} in {}ms",
+                    target_uri,
+                    t.status(),
+                    t_upstream.elapsed().as_millis()
+                ),
+            );
+            t
+        }
         Err(e) => {
+            tracked_log(
+                log::Level::Debug,
+                remote_addr.ip(),
+                &signed_message.address,
+                &original_req_uri,
+                format!(
+                    "hang-debug: gasfree upstream {} request FAILED after {}ms: {}",
+                    target_uri,
+                    t_upstream.elapsed().as_millis(),
+                    e
+                ),
+            );
             tracked_log(
                 log::Level::Warn,
                 remote_addr.ip(),
