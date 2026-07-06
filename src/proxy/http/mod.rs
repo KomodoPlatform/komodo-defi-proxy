@@ -9,7 +9,6 @@ use std::{
     sync::{Arc, LazyLock},
     time::{Duration, Instant},
 };
-use timed_map::{MapKind, StdClock, TimedMap};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -225,9 +224,12 @@ async fn peer_connection_healthcheck(
     // for 10 seconds without asking again.
     let know_peer_expiration = Duration::from_secs(cfg.peer_healthcheck_caching_secs);
 
-    static KNOWN_PEERS: LazyLock<Mutex<TimedMap<StdClock, PeerId, ()>>> = LazyLock::new(|| {
-        Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(25))
-    });
+    /// Peers confirmed as connected to the KDF network, mapped to the moment the
+    /// confirmation expires. Plain `HashMap` + `Instant` on purpose: `timed-map` 1.1.0
+    /// had an infinite loop in its expiry cleanup that hard-froze this proxy in
+    /// production (see issue #30), and this cache is trivial enough to not need a crate.
+    static KNOWN_PEERS: LazyLock<Mutex<HashMap<PeerId, Instant>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
 
     /// Per-peer locks serializing concurrent healthchecks of the same peer id.
     static IN_FLIGHT_HEALTHCHECKS: LazyLock<Mutex<HashMap<PeerId, Arc<Mutex<()>>>>> =
@@ -248,7 +250,12 @@ async fn peer_connection_healthcheck(
     };
 
     // Fast path: cache lookup under a short-lived lock.
-    if KNOWN_PEERS.lock().await.get(&peer_id).is_some() {
+    if KNOWN_PEERS
+        .lock()
+        .await
+        .get(&peer_id)
+        .is_some_and(|&expires_at| expires_at > Instant::now())
+    {
         tracked_log(
             log::Level::Debug,
             remote_addr.ip(),
@@ -293,7 +300,12 @@ async fn peer_connection_healthcheck(
 
         // Re-check the cache: another request for this peer may have completed the
         // healthcheck while we were waiting for the per-peer lock.
-        if KNOWN_PEERS.lock().await.get(&peer_id).is_some() {
+        if KNOWN_PEERS
+            .lock()
+            .await
+            .get(&peer_id)
+            .is_some_and(|&expires_at| expires_at > Instant::now())
+        {
             tracked_log(
                 log::Level::Debug,
                 remote_addr.ip(),
@@ -322,10 +334,12 @@ async fn peer_connection_healthcheck(
             match rpc_result {
                 Ok(response) => {
                     if response["result"] == serde_json::json!(true) {
-                        KNOWN_PEERS
-                            .lock()
-                            .await
-                            .insert_expirable(peer_id, (), know_peer_expiration);
+                        let mut known_peers = KNOWN_PEERS.lock().await;
+                        let now = Instant::now();
+                        // Evict stale entries in passing; the map only ever holds peers
+                        // seen within the TTL window, so this stays tiny.
+                        known_peers.retain(|_, &mut expires_at| expires_at > now);
+                        known_peers.insert(peer_id, now + know_peer_expiration);
                         Ok(())
                     } else {
                         tracked_log(
