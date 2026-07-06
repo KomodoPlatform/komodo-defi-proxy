@@ -5,6 +5,7 @@ use hyper_tls::HttpsConnector;
 use proxy_signature::ProxySign;
 use serde::{Deserialize, Serialize};
 use serde_json::from_reader;
+use std::time::Instant;
 
 use crate::proxy::{insert_jwt_to_http_header, APPLICATION_JSON};
 
@@ -67,6 +68,18 @@ impl RpcClient {
         payload: serde_json::Value,
         is_authorized: bool,
     ) -> GenericResult<serde_json::Value> {
+        // hang-debug: log only the method name, never the payload itself (it contains userpass).
+        let rpc_method = payload["method"]
+            .as_str()
+            .unwrap_or("**unknown**")
+            .to_owned();
+        let t_start = Instant::now();
+        log::debug!(
+            "hang-debug: RpcClient::send starting: method '{}' to {} (NOTE: no timeout is configured on this client)",
+            rpc_method,
+            self.url
+        );
+
         let mut req = Request::post(&self.url).body(Body::from(payload.to_string()))?;
         req.headers_mut()
             .append(header::CONTENT_TYPE, APPLICATION_JSON.parse()?);
@@ -78,8 +91,49 @@ impl RpcClient {
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build(https);
 
-        let res = client.request(req).await?;
-        let body = aggregate(res).await?;
+        let res = match client.request(req).await {
+            Ok(res) => {
+                log::debug!(
+                    "hang-debug: RpcClient::send '{}' to {}: response headers received in {}ms, status {}",
+                    rpc_method,
+                    self.url,
+                    t_start.elapsed().as_millis(),
+                    res.status()
+                );
+                res
+            }
+            Err(e) => {
+                log::debug!(
+                    "hang-debug: RpcClient::send '{}' to {}: transport error after {}ms: {}",
+                    rpc_method,
+                    self.url,
+                    t_start.elapsed().as_millis(),
+                    e
+                );
+                return Err(e.into());
+            }
+        };
+
+        let body = match aggregate(res).await {
+            Ok(body) => body,
+            Err(e) => {
+                log::debug!(
+                    "hang-debug: RpcClient::send '{}' to {}: body read error after {}ms: {}",
+                    rpc_method,
+                    self.url,
+                    t_start.elapsed().as_millis(),
+                    e
+                );
+                return Err(e.into());
+            }
+        };
+
+        log::debug!(
+            "hang-debug: RpcClient::send '{}' to {}: completed in {}ms total",
+            rpc_method,
+            self.url,
+            t_start.elapsed().as_millis()
+        );
 
         Ok(from_reader(Buf::reader(body))?)
     }

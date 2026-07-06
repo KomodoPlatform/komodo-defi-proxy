@@ -80,6 +80,16 @@ async fn connection_handler(
     req: Request<Body>,
     remote_addr: SocketAddr,
 ) -> GenericResult<Response<Body>> {
+    let t_start = std::time::Instant::now();
+    log::debug!(
+        "hang-debug: connection_handler started: {} {} from tcp-peer {}",
+        req.method(),
+        req.uri(),
+        remote_addr
+    );
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+
     let remote_addr = match get_real_address(&req, &remote_addr) {
         Ok(t) => t,
         _ => {
@@ -95,11 +105,32 @@ async fn connection_handler(
         }
     };
 
-    if should_upgrade_to_socket_conn(&req) {
+    let result = if should_upgrade_to_socket_conn(&req) {
         socket_handler(cfg.clone(), req, remote_addr).await
     } else {
         http_handler(cfg, req, remote_addr).await
+    };
+
+    match &result {
+        Ok(response) => log::debug!(
+            "hang-debug: connection_handler finished: {} {} from {} -> status {} in {}ms",
+            method,
+            uri,
+            remote_addr,
+            response.status(),
+            t_start.elapsed().as_millis()
+        ),
+        Err(e) => log::debug!(
+            "hang-debug: connection_handler finished: {} {} from {} -> error '{}' in {}ms",
+            method,
+            uri,
+            remote_addr,
+            e,
+            t_start.elapsed().as_millis()
+        ),
     }
+
+    result
 }
 
 /// Starts serving the proxy API on the configured port. This function sets up the HTTP server,
@@ -109,6 +140,10 @@ pub(crate) async fn serve(cfg: &'static AppConfig) -> GenericResult<()> {
 
     let handler = make_service_fn(move |c_stream: &AddrStream| {
         let remote_addr = c_stream.remote_addr();
+        log::debug!(
+            "hang-debug: new TCP connection accepted from {}",
+            remote_addr
+        );
         async move {
             Ok::<_, GenericError>(service_fn(move |req| {
                 connection_handler(cfg, req, remote_addr)

@@ -18,11 +18,18 @@ pub(crate) fn get_redis_client(cfg: &AppConfig) -> &'static redis::Client {
 pub(crate) async fn get_redis_connection(cfg: &AppConfig) -> MultiplexedConnection {
     let client = get_redis_client(cfg);
 
-    client
+    let t_start = std::time::Instant::now();
+    let connection = client
         .get_multiplexed_tokio_connection()
         .await
         .map_err(|e| e.to_string())
-        .expect("Couldn't get connection from redis client.")
+        .expect("Couldn't get connection from redis client.");
+    log::debug!(
+        "hang-debug: redis multiplexed connection obtained in {}ms",
+        t_start.elapsed().as_millis()
+    );
+
+    connection
 }
 
 pub(crate) struct Db {
