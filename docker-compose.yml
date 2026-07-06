@@ -13,6 +13,11 @@ services:
       retries: 3
       start_period: 10s
     command: redis-server --appendonly yes --appendfsync everysec
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 
   proxy:
@@ -33,6 +38,11 @@ services:
     ports:
       - "127.0.0.1:6150:6150"
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   kdf:
     build:
@@ -54,6 +64,11 @@ services:
       retries: 6
       start_period: 30s
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   redis_data:
