@@ -1,5 +1,5 @@
 use hyper::{StatusCode, Uri};
-use libp2p::PeerId;
+use libp2p::{identity::PublicKey, PeerId};
 use proxy_signature::ProxySign;
 use std::{
     collections::HashMap,
@@ -7,7 +7,7 @@ use std::{
     str::FromStr,
     sync::atomic::{AtomicU64, AtomicUsize, Ordering},
     sync::{Arc, LazyLock},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::Mutex;
 
@@ -25,6 +25,106 @@ pub(crate) mod get;
 pub(crate) mod post;
 
 const MAX_SIGNATURE_EXP_SECS: u64 = 15;
+
+/// How many bytes the signer used for `RawMessage.body_size` (a `usize`) when
+/// encoding the message for signing.
+#[derive(Clone, Copy)]
+enum BodySizeEncoding {
+    /// 8 bytes — what `usize::to_ne_bytes()` produces on native 64-bit platforms,
+    /// and the only encoding `proxy_signature::is_valid_message` verifies against.
+    Native8,
+    /// 4 bytes — what `usize::to_ne_bytes()` produces on wasm32 (browser-wallet
+    /// KDF builds).
+    Wasm32_4,
+}
+
+/// Outcome of the local `X-Auth-Payload` signature verification.
+#[derive(Debug)]
+enum SignatureVerdict {
+    /// Ed25519 verified over the canonical encoding (`body_size` as 8 bytes).
+    ValidNative,
+    /// Ed25519 verified over the wasm32-compat encoding (`body_size` as 4 bytes).
+    ValidWasm32Compat,
+    /// Rejected, with the reason.
+    Invalid(String),
+}
+
+/// `proxy_signature::RawMessage::encode()` equivalent with a configurable
+/// `body_size` width. The byte layout must stay in lockstep with the crate:
+/// prefix + public_key_encoded + uri + body_size + expires_at (8-byte LE i64).
+fn encode_raw_message(sign: &ProxySign, body_size_encoding: BodySizeEncoding) -> Vec<u8> {
+    const PREFIX: &[u8] = b"Encoded Message for KDP\n";
+    let raw = &sign.raw_message;
+    let mut bytes = PREFIX.to_vec();
+    bytes.extend_from_slice(&raw.public_key_encoded);
+    bytes.extend_from_slice(raw.uri.as_bytes());
+    match body_size_encoding {
+        BodySizeEncoding::Native8 => bytes.extend_from_slice(&(raw.body_size as u64).to_le_bytes()),
+        BodySizeEncoding::Wasm32_4 => bytes.extend_from_slice(&(raw.body_size as u32).to_le_bytes()),
+    }
+    bytes.extend_from_slice(&raw.expires_at.to_le_bytes());
+    bytes
+}
+
+/// Re-implementation of `proxy_signature::ProxySign::is_valid_message` (crate rev
+/// `e65fefe5`, the one pinned in Cargo.lock) with one addition: when the signature
+/// does not verify over the canonical encoding, it is retried with `body_size`
+/// encoded as 4 bytes.
+///
+/// Rationale: `RawMessage::encode()` in the crate serializes `body_size` (a `usize`)
+/// with `to_ne_bytes()`, which is 4 bytes on wasm32 but 8 bytes here, so a correctly
+/// signed request from a WASM client (browser wallet) can never pass the stock
+/// verification — see GLEECBTC/komodo-defi-proxy#30. Drop the fallback once
+/// `proxy_signature` encodes `body_size` as a fixed-width `u64` and the wallet WASM
+/// builds are rebuilt against it.
+fn verify_signature_wasm_compat(sign: &ProxySign, max_message_exp_secs: u64) -> SignatureVerdict {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(i64::MAX);
+
+    let remaining = u64::try_from(sign.raw_message.expires_at.saturating_sub(now)).unwrap_or(0);
+    if remaining == 0 {
+        return SignatureVerdict::Invalid("message expired".into());
+    }
+    if remaining > max_message_exp_secs {
+        return SignatureVerdict::Invalid(format!(
+            "expiration {remaining}s ahead exceeds the allowed {max_message_exp_secs}s window"
+        ));
+    }
+
+    let Ok(public_key) = PublicKey::try_decode_protobuf(&sign.raw_message.public_key_encoded)
+    else {
+        return SignatureVerdict::Invalid(
+            "public key doesn't decode as libp2p protobuf".into(),
+        );
+    };
+
+    if sign.address != public_key.to_peer_id().to_string() {
+        return SignatureVerdict::Invalid(
+            "address doesn't match the embedded public key".into(),
+        );
+    }
+
+    if public_key.verify(
+        &encode_raw_message(sign, BodySizeEncoding::Native8),
+        &sign.signature_bytes,
+    ) {
+        return SignatureVerdict::ValidNative;
+    }
+
+    if public_key.verify(
+        &encode_raw_message(sign, BodySizeEncoding::Wasm32_4),
+        &sign.signature_bytes,
+    ) {
+        return SignatureVerdict::ValidWasm32Compat;
+    }
+
+    SignatureVerdict::Invalid(
+        "Ed25519 signature doesn't verify (tried both 8-byte and 4-byte body_size encodings)"
+            .into(),
+    )
+}
 
 /// hang-debug: monotonically increasing id assigned to every request entering
 /// `validation_middleware`, used to correlate log lines of one request.
@@ -89,28 +189,41 @@ pub(crate) async fn validation_middleware(
             // The signature check is cheap and local, so it runs before the networked
             // peer healthcheck; unauthenticated requests must not trigger KDF RPCs.
             let t_sig = Instant::now();
-            let sig_valid = signed_message.is_valid_message(MAX_SIGNATURE_EXP_SECS);
+            let sig_verdict = verify_signature_wasm_compat(signed_message, MAX_SIGNATURE_EXP_SECS);
             tracked_log(
                 log::Level::Debug,
                 remote_addr.ip(),
                 &signed_message.address,
                 req_uri,
                 format!(
-                    "hang-debug: [req#{req_id}] signature validation done in {}ms (valid: {sig_valid})",
+                    "hang-debug: [req#{req_id}] signature validation done in {}ms (verdict: {sig_verdict:?})",
                     t_sig.elapsed().as_millis()
                 ),
             );
 
-            if !sig_valid {
-                tracked_log(
-                    log::Level::Warn,
-                    remote_addr.ip(),
-                    &signed_message.address,
-                    req_uri,
-                    "Request has invalid signed message, returning 401",
-                );
+            match &sig_verdict {
+                SignatureVerdict::ValidNative => {}
+                SignatureVerdict::ValidWasm32Compat => {
+                    tracked_log(
+                        log::Level::Info,
+                        remote_addr.ip(),
+                        &signed_message.address,
+                        req_uri,
+                        "Signature accepted via wasm32 4-byte body_size fallback encoding \
+                         (proxy_signature portability bug, issue #30)",
+                    );
+                }
+                SignatureVerdict::Invalid(reason) => {
+                    tracked_log(
+                        log::Level::Warn,
+                        remote_addr.ip(),
+                        &signed_message.address,
+                        req_uri,
+                        format!("Request has invalid signed message ({reason}), returning 401"),
+                    );
 
-                return Err(StatusCode::UNAUTHORIZED);
+                    return Err(StatusCode::UNAUTHORIZED);
+                }
             }
 
             let t_hc = Instant::now();
@@ -496,6 +609,81 @@ mod tests {
             HeaderName::from_bytes(X_AUTH_PAYLOAD.as_bytes()).unwrap(),
         ];
         remove_hop_by_hop_headers(&mut req, additional_headers).unwrap();
+    }
+
+    fn now_secs() -> i64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
+    }
+
+    /// Builds a ProxySign the way a wasm32 signer does: the Ed25519 signature is
+    /// computed over the encoding where `body_size` (usize) takes 4 bytes.
+    fn build_wasm32_style_proxy_sign(
+        keypair: &identity::Keypair,
+        uri: &str,
+        expires_at: i64,
+    ) -> ProxySign {
+        let sign = ProxySign {
+            signature_bytes: vec![],
+            address: keypair.public().to_peer_id().to_string(),
+            raw_message: proxy_signature::RawMessage {
+                uri: uri.to_string(),
+                body_size: 0,
+                public_key_encoded: keypair.public().encode_protobuf(),
+                expires_at,
+            },
+        };
+        let message = encode_raw_message(&sign, BodySizeEncoding::Wasm32_4);
+        ProxySign {
+            signature_bytes: keypair.sign(&message).unwrap(),
+            ..sign
+        }
+    }
+
+    #[test]
+    fn test_verify_signature_native_and_wasm32_compat() {
+        let keypair = generate_ed25519_keypair([7; 32]);
+        let uri = "https://example.com/gasfree/test";
+
+        // Native signer (the proxy_signature crate itself, 8-byte body_size).
+        let native_sign =
+            RawMessage::sign(&keypair, &Uri::from_static("https://example.com/gasfree/test"), 0, 5)
+                .unwrap();
+        assert!(matches!(
+            verify_signature_wasm_compat(&native_sign, MAX_SIGNATURE_EXP_SECS),
+            SignatureVerdict::ValidNative
+        ));
+
+        // wasm32-style signer (4-byte body_size) is accepted via the fallback.
+        let wasm_sign = build_wasm32_style_proxy_sign(&keypair, uri, now_secs() + 5);
+        assert!(matches!(
+            verify_signature_wasm_compat(&wasm_sign, MAX_SIGNATURE_EXP_SECS),
+            SignatureVerdict::ValidWasm32Compat
+        ));
+
+        // Tampered signature fails both encodings.
+        let mut tampered = native_sign.clone();
+        tampered.signature_bytes[0] ^= 1;
+        assert!(matches!(
+            verify_signature_wasm_compat(&tampered, MAX_SIGNATURE_EXP_SECS),
+            SignatureVerdict::Invalid(_)
+        ));
+
+        // Expired message is rejected before any crypto.
+        let expired = build_wasm32_style_proxy_sign(&keypair, uri, now_secs() - 1);
+        assert!(matches!(
+            verify_signature_wasm_compat(&expired, MAX_SIGNATURE_EXP_SECS),
+            SignatureVerdict::Invalid(_)
+        ));
+
+        // Signed too far in the future (beyond the 15s window) is rejected.
+        let too_long = build_wasm32_style_proxy_sign(&keypair, uri, now_secs() + 300);
+        assert!(matches!(
+            verify_signature_wasm_compat(&too_long, MAX_SIGNATURE_EXP_SECS),
+            SignatureVerdict::Invalid(_)
+        ));
     }
 
     #[tokio::test]
